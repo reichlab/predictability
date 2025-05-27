@@ -86,7 +86,7 @@ get_nearest_neighbors <- function(phi, k, h) {
 #' @param ... other parameters to pass to similarity functions
 #'
 #' @returns
-return_nn_preds <- function(y, h, k, method, ...) {
+return_knn_preds <- function(y, h, k, method, ...) {
   args <- list(...)
   t <- length(y)
 
