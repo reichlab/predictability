@@ -3,6 +3,8 @@ library(ggplot2)
 library(foreach)
 library(doParallel)
 
+source("R/knn-utils.R")
+
 ma_dat <- cdcfluview::ilinet(region = "state", years = 2010:2019) |>
   filter(region == "Massachusetts") |>
   mutate(season = ifelse(week < 40,
@@ -22,12 +24,13 @@ ggplot(ma_dat) +
 ##  h: 1 to 5
 
 start_idx <- 53 ## drop first season
-maxh <- 24
+maxh <- 5
+maxk <- 5
 
 knn_data <- expand.grid(
   data_idx = start_idx:(nrow(ma_dat)-maxh),
   h = 1:maxh,
-  k = seq(1, 15, by=2),
+  k = seq(1, maxk, by=2),
   method = c("seasonal", "distance", "uniform"),
   stringsAsFactors = FALSE
 ) |>
