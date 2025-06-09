@@ -1,8 +1,11 @@
-phi_seasonal <- function(y, rho, eta, ...) {
+phi_seasonal <- function(y, h, rho, eta, ...) {
   t <- length(y)
 
   ## implement gaussian kernel
-  exp( -sin(rho * (t-1:(t-1)))^2 / (2*eta^2) )
+  ## rho is the frequency of the seasonal cycle
+  ## eta is the width of the gaussian kernel
+  ## compute similarity between the h-step ahead timepoint and all previous ones
+  exp( -sin(rho * (t+h-1:(t-1)))^2 / (2*eta^2) )
 }
 
 
@@ -47,26 +50,26 @@ phi_uniform <- function(y) {
 }
 
 
-#' Find indices of nearest neighbors
+#' Find indices of analogues
 #'
 #' @param phi vector of similarities. Similarities are presumed to be
 #' calculated between observations at timepoint t and i where i is the index
 #' of the vector phi.
-#' @param k the number of neighbors ot return.
+#' @param k the number of analogues to return.
 #' @param h the horizon to predict for
 #'
 #' @returns a data.frame with three columns.
 #'   - topk_indices: the indices of the original phi vector returned
 #'   - topk_values: the values of the original phi vector
 #'   - topk_weights: the scaled weights (sum to 1) of the phi vector
-get_nearest_neighbors <- function(phi, k, h) {
+get_analogues <- function(phi, k, h) {
 
   ## remove last h-1 indices from phi vector
   ## those entries will not be able to be used for h-step ahead predictions
   phi <- phi[1:(length(phi)-h+1)] ## (length(phi)-h+1) = t-1-h+1 = t-h
 
   if (length(phi)<k)
-    stop(paste("length of phi vector", length(phi), "is less than number of neighbors", k))
+    stop(paste("length of phi vector", length(phi), "is less than number of analogues", k))
 
   topk_indices <- order(phi, decreasing=TRUE)[1:k]
   topk_values <- phi[topk_indices]
@@ -82,18 +85,18 @@ get_nearest_neighbors <- function(phi, k, h) {
 #'
 #' @param y vector of length t, the observed time series
 #' @param h integer horizon for which the prediction is desired
-#' @param k integer number of nearest neighbors to use
+#' @param k integer number of analogues to use
 #' @param ... other parameters to pass to similarity functions
 #'
 #' @returns
-return_knn_preds <- function(y, h, k, method, ...) {
+return_analogue_preds <- function(y, h, k, method, ...) {
   args <- list(...)
   t <- length(y)
 
   ## compute similarities depending on specified method
   similarities <- switch(method,
     uniform = phi_uniform(y),
-    seasonal = phi_seasonal(y, ...),
+    seasonal = phi_seasonal(y, h, ...),
     distance = phi_distance(y, ...)
   )
 
@@ -103,7 +106,7 @@ return_knn_preds <- function(y, h, k, method, ...) {
   }
 
   if(method == "seasonal" & length(similarities) != t-1 ){
-    stop("for uniform similarity, length of similarities vector must be t-1")
+    stop("for seasonal similarity, length of similarities vector must be t-1")
   }
 
   if(method == "distance" ){
@@ -111,16 +114,23 @@ return_knn_preds <- function(y, h, k, method, ...) {
     stop("for uniform similarity, length of similarities vector must be t-p")
   }
 
-  nn_indices <- get_nearest_neighbors(phi=similarities, k, h)
+  analogue_indices <- get_analogues(phi=similarities, k, h)
 
   ## adjust indices for distance method
   if(method == "distance") {
-    ## since y_1 through y_{p-1} are omitted in the returned similarity vectot
+    ## since y_1 through y_{p-1} are omitted in the returned similarity vector
     ## we adjust the "topk_indices" by adding p-1 so they match the original indices for y
-    nn_indices$topk_indices <- nn_indices$topk_indices + args$p - 1
+    analogue_indices$topk_indices <- analogue_indices$topk_indices + args$p - 1
   }
 
-  list(pred = sum(y[nn_indices$topk_indices+h]*nn_indices$topk_weights),
-       nn_indices = nn_indices)
+  ## adjust indices for seasonal method
+  if(method == "seasonal") {
+    ## since similarities are computed relative to the timepoint t+h
+    ## adjust topk_indices by subtracting h
+    analogue_indices$topk_indices <- analogue_indices$topk_indices - h
+  }
+
+  list(pred = sum(y[analogue_indices$topk_indices+h]*analogue_indices$topk_weights),
+       analogue_indices = analogue_indices)
 }
 

@@ -1,0 +1,345 @@
+---
+title: "Predictability Vignette"
+author: "Nick Reich"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+This vignette is designed to explore an approach to estimating the "predictability" of a time-series using a method of analogues approach. 
+
+The idea is to use a time-series of observations to estimate a future value given the past values. This is done by finding similar past observations (analogues) and using their future values to estimate the the future value.
+
+## A few simple examples with real data
+
+We start by loading some utility functions and real data to use as an example. The data is Influenza Like Illness (ILI) data from Massachusetts from the 2010/2011 season through the 2019/2020 season. We use the `unweighted_ili` variable, and create a smooth version of this as well.
+```{r}
+library(tidyverse)
+source("R/knn-utils.R")
+
+ma_dat <- cdcfluview::ilinet(region = "state", years = 2010:2019) |>
+  filter(region == "Massachusetts") |>
+  mutate(season = ifelse(week < 40,
+                         paste0(year - 1, "/", year),
+                         paste0(year, "/", year+1)),
+         unweighted_ili_lag1  = lag(unweighted_ili),
+         smooth_unweighted_ili = zoo::rollmean(unweighted_ili, k = 4, fill = NA, align = "right"),
+         smooth_unweighted_ili_lag1 = lag(smooth_unweighted_ili, 1)
+  )
+```
+
+We want to examine the analogues and those analogues' futures for a single point in the time-series as a starting place. For this example, we will pick week 49 of 2019, when a large season is just starting to take off. We will look 4 weeks ahead. We will use 10 analogues (`k=10`) and use Euclidean distance to determine analogues, where an analogue to $y_t$ is found by finding the shortest distance of $(y_t, y_t-1)$ to $(y_{t^*}, y_{t^*-1})$ for all possible values of $t^*<t$. This is done by setting `p=2`, but including higher dimensional distance calculations is possible by using a larger $p$.
+```{r}
+idx <- 479 ## row 479 is week 49, 20219
+this_h <- 4
+
+## get the analogues
+analogue_data <- return_analogue_preds(
+  y = ma_dat$unweighted_ili[1:idx],
+  h = this_h,
+  k = 10,
+  method = "distance",
+  p = 2
+)
+```
+
+Now we can visualize the analogues and their futures. The analogues are shown as red `+` symbols, and the future values of the analogues are shown as red circles. The observation is a blue `x` and the 4-week ahead prediction based on the analogue futures (a weighted average of the futures) is the green asterisk.
+```{r}
+ggplot(ma_dat) +
+  geom_path(aes(x = week_start, y = unweighted_ili)) +
+  ## plot the index point
+  geom_point(data = ma_dat[idx, ],
+             aes(x = week_start, y = unweighted_ili),
+             color = "blue", size = 3, shape = 4) +
+  ## plot the analogues
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+             aes(x = week_start, y = unweighted_ili),
+             color = "red", size = 3, shape = 3) +
+  ## plot the analogues' futures
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
+             aes(x = week_start, y = unweighted_ili),
+             color = "red", shape = 20) +
+  ## plot the prediction
+  geom_point(x = ma_dat$week_start[idx + this_h],
+             y = analogue_data$pred,
+             color = "green", size = 3, shape = 8) +
+  ggtitle("10 analogues with p=2")
+```
+
+
+Next, we can visualize the analogues in a 2D space of the past values. The x-axis is the value at time $t-1$ and the y-axis is the value at time $t$. The analogues are shown as red `+` symbols, and the future values of the analogues are shown as red circles. The observation is a blue `x`. (You may need to use plotly controls to zoom in a bit to see these.)
+```{r}
+p <- ggplot(ma_dat) +
+  geom_path(aes(y = unweighted_ili,
+                x = unweighted_ili_lag1),
+            alpha = .5) +
+  geom_point(aes(y = unweighted_ili,
+                x = unweighted_ili_lag1),
+            alpha = .2) +
+  ## plot the index point
+  geom_point(data = ma_dat[idx, ],
+             aes(y = unweighted_ili,
+                 x = unweighted_ili_lag1),
+             color = "blue", size = 3, shape = 4) +
+  ## plot the analogues
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+             aes(y = unweighted_ili,
+                 x = unweighted_ili_lag1),
+             color = "red", size = 3, shape = 3) +
+  ## plot the analogues' futures
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
+             aes(y = unweighted_ili,
+                 x = unweighted_ili_lag1),
+             color = "red", shape = 20) +
+  ## plot the observation
+  annotate("point",
+           y = ma_dat$unweighted_ili[idx + this_h],
+           x = ma_dat$unweighted_ili_lag1[idx + this_h],
+           color = "blue", size = 3, shape = 20) +
+  ## plot the prediction
+  ## this doesn't make sense because the x isn't right.
+  # annotate("point",
+  #          y = analogue_data$pred,
+  #          x = ma_dat$smooth_unweighted_ili_lag1[idx + this_h],
+  #          color = "green", size = 3, shape = 8) +
+  scale_x_log10() +
+  scale_y_log10()
+plotly::ggplotly(p)
+```
+
+In the above plot, we can think of there being a ball around the blue `x` that contains the analogues. The size of the ball is determined by maximum distance between the observation and the furthest away analogue. If we used a higher dimensional distance calculation, then we could imagine a higher dimensional "attractor" and ball around the observation. (The term attractor is taken from dynamical systems theory, where they use representations of the data as shown above and refer to them as attractors.)
+
+One thing that we notice about the first figure above is that some of the analogues are coming on the tail end of the season, when incidence is declining, which is not desirable, since at our observation the trend is very much "up". 
+
+One way to to try to fix this would be to incorporate seasonality as part of the analogue determination. Another way could be to smooth the data, since this particular timepoint sees a small dip from time $t-1$ to $t$. Another way might be to use a higher $p$, so that the analogues are more similar in terms of the trajectory over the previous time points.
+
+Here, using the same timepoint, we can use `p=7` and we see differences in terms of which points are selected.
+
+```{r}
+## get the analogues
+analogue_data <- return_analogue_preds(
+  y = ma_dat$unweighted_ili[1:idx],
+  h = this_h,
+  k = 10,
+  method = "distance",
+  p = 7
+)
+ggplot(ma_dat) +
+  geom_path(aes(x = week_start, y = unweighted_ili)) +
+  ## plot the index point
+  geom_point(data = ma_dat[idx, ],
+             aes(x = week_start, y = unweighted_ili),
+             color = "blue", size = 3, shape = 4) +
+  ## plot the analogues
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+             aes(x = week_start, y = unweighted_ili),
+             color = "red", size = 3, shape = 3) +
+  ## plot the analogues' futures
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
+             aes(x = week_start, y = unweighted_ili),
+             color = "red", shape = 20) +
+  ## plot the prediction
+  geom_point(x = ma_dat$week_start[idx + this_h],
+             y = analogue_data$pred,
+             color = "green", size = 3, shape = 8) +
+  ggtitle("10 analogues with p=7")
+```
+
+## Using seasonality to find analogues
+
+The plot below shows the 30 nearest analogues (red crosses) for the blue observation (blue "X"). 
+
+```{r}
+## from https://github.com/reichlab/flusion/blob/ab82656e4724f1c33b4cf8b133f49befc4dc8e63/data-raw/influenza-ilinet/download-ilinet.R#L19
+
+mmwr_week_to_season_week <- function(
+  mmwr_week,
+  mmwr_year,
+  first_season_week = 31) {
+  last_season_week <- first_season_week - 1
+  season_week <- ifelse(
+    mmwr_week <= last_season_week,
+    mmwr_week + MMWRweek::MMWRweek(MMWRweek:::start_date(mmwr_year) - 1)$MMWRweek - last_season_week,
+    mmwr_week - last_season_week
+  )
+
+  return(season_week)
+}
+
+## make a season-week variable
+ma_dat <- ma_dat |>
+  mutate(season_week = mmwr_week_to_season_week(week, year, 40))
+```
+
+
+```{r}
+## get the analogues
+analogue_data <- return_analogue_preds(
+  y = ma_dat$unweighted_ili[1:idx],
+  h = this_h,
+  k = 30,
+  method = "seasonal",
+  rho = pi/52,
+  eta = 1
+)
+
+ggplot(ma_dat) +
+  geom_path(aes(x = season_week, y = unweighted_ili, group = season)) +
+  ## plot the index point
+  geom_point(data = ma_dat[idx, ],
+             aes(x = season_week, y = unweighted_ili),
+             color = "blue", size = 3, shape = 4) +
+  ## plot the analogues
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+             aes(x = season_week, y = unweighted_ili),
+             color = "red", size = 3, shape = 3) +
+  ## plot the analogues' futures
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
+             aes(x = season_week, y = unweighted_ili),
+             color = "red", shape = 20) +
+  ## plot the prediction
+  geom_point(x = ma_dat$season_week[idx + this_h],
+             y = analogue_data$pred,
+             color = "green", size = 3, shape = 8) +
+  ggtitle("30 analogues")
+
+```
+
+
+## Assessing the $R^2$ metric in practice
+
+We conduct a small experiment to evaluate the predictability of the time-series. 
+The experiment will compare the method of analogues using varying numbers of analogues ($k$) and varying prediction horizons ($h$). 
+Starting with the beginning of the 2012/2013 season, we generate 1- through 6-step ahead predictions for each timepoint in the dataset using the "seasonal" and "distance" based kernel approaches to computing analogues. 
+We then summarize the results by season of the date the prediction was made, horizon and method.
+For each season, we compute the $R^2_{SEAS,m,h,k}$ and $R^2_{DIST,m,h,k}$ as described in the methods. 
+
+For the seasonal approach, we only made predictions with $k=30$, reflecting the fact that you are trying to use a lot of seasonal analogues from previous seasons. We set $\rho = \pi/52$ and $\eta = 1/10$.
+
+For the distance approach, we made predictions with $k=1, 3, 5, 7, 9, 11, 13, 15$ analogues and using the last four timepoints to define analogues ($p=4$).
+
+The figure below plots $R^2_{SEAS,m,h,k=30}$ (x-axis) vs $R^2_{DIST,m,h,k=5}$ (y-axis), with the $y=x$ line for reference.
+Note that when a point for a season falls above the $y=x$ line this can be thought of as the distance method being better than the seasonal method for that season, horizon and number of analogues. 
+Seasons where the distance method is worse than the seasonal method are below the $y=x$ line, and show limited predictability above a seasonal average.
+Nearly all seasons show positive predictability when h=1 and none do when h=6.
+
+```{r analogue-sim}
+library(foreach)
+library(doParallel)
+
+start_idx <- 105 ## drop first two seasons
+maxh <- 6
+maxk <- 15
+
+dist_data <- expand.grid(
+  pred_date_idx = start_idx:(nrow(ma_dat)-maxh),
+  h = 1:maxh,
+  k = seq(1, maxk, by=2),
+  method = c("distance"),
+  stringsAsFactors = FALSE
+) |>
+  mutate(
+    pred = NA
+  )
+
+seas_data <- expand.grid(
+  pred_date_idx = start_idx:(nrow(ma_dat)-maxh),
+  h = 1:maxh,
+  k = 30,
+  method = c("seasonal"),
+  stringsAsFactors = FALSE
+) |>
+  mutate(
+    pred = NA
+  )
+
+analogue_sim_data <- bind_rows(
+  dist_data,
+  seas_data
+)
+
+
+# Set up parallel backend
+num_cores <- detectCores() - 1  # Use all but one core
+cl <- makeCluster(num_cores)
+registerDoParallel(cl)
+
+# Parallel loop using foreach
+preds <- foreach(i = 1:nrow(analogue_sim_data), .combine = 'c') %dopar% {
+  idx <- analogue_sim_data$pred_date_idx[i]
+  if (is.na(idx) || idx <= 1) return(NA)  # safety check
+
+  result <- return_analogue_preds(
+    y = ma_dat$unweighted_ili[1:idx],
+    h = analogue_sim_data$h[i],
+    k = analogue_sim_data$k[i],
+    method = analogue_sim_data$method[i],
+    p = 4,
+    rho = pi / 52,
+    eta = 1 / 10
+  )
+  result$pred
+}
+
+# Stop the cluster after work is done
+stopCluster(cl)
+
+# Assign predictions back to analogue_sim_data
+analogue_sim_data$pred <- preds
+analogue_sim_data$target_date_idx <- analogue_sim_data$pred_date_idx + analogue_sim_data$h
+analogue_sim_data$season_week <- ma_dat$season_week[analogue_sim_data$pred_date_idx]
+
+analogue_sim_data$target_unweighted_ili <- ma_dat$unweighted_ili[analogue_sim_data$target_date_idx]
+analogue_sim_data$unweighted_ili <- ma_dat$unweighted_ili[analogue_sim_data$pred_date_idx]
+analogue_sim_data$sq_error <- (analogue_sim_data$pred - analogue_sim_data$target_unweighted_ili)^2
+analogue_sim_data$pred_date_season <- ma_dat$season[analogue_sim_data$pred_date_idx]
+analogue_sim_data$target_date_season <- ma_dat$season[analogue_sim_data$target_date_idx]
+
+analogue_data_summary <- analogue_sim_data |>
+  group_by(pred_date_season, method, k, h) |>
+  summarise(mse = mean(sq_error, na.rm = TRUE),
+            sstot = mean((unweighted_ili - mean(unweighted_ili))^2),
+            total_weeks = n()
+  ) |>
+  group_by(pred_date_season, k, h) |>
+  ## scale mse by mse value
+  mutate(
+    rsq = 1 - mse/sstot
+  )
+
+## clumsily join k=30 seasonal with each separate distance
+rsq_data <- analogue_data_summary |>
+  select(pred_date_season, method, rsq, k, h) |>
+  filter(method == "distance") |>
+  left_join(
+    filter(analogue_data_summary, method == "seasonal"),
+    by = c("pred_date_season", "h")
+  ) |> 
+  rename(rsq_seasonal = rsq.y,
+         rsq_distance = rsq.x)
+
+rsq_data |>
+  filter(k.x==9) |>
+  ggplot() +
+  geom_point(aes(x=rsq_seasonal, y=rsq_distance, color=pred_date_season)) +
+  coord_cartesian(xlim = c(0,1), ylim=c(-0.1,1)) +
+  geom_abline(slope=1, intercept=0) +
+  facet_wrap(.~h)
+```
+
+
+## Ideas for next steps
+
+to compute and compare:
+
+ - mean/variance of distances: how "good" are the analogues
+ - mean/variance of the analogue future values: what is the uncertainty
+ - could look at the metrics/results with and without smoothing of original data
+
