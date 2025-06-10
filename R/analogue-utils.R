@@ -81,14 +81,16 @@ get_analogues <- function(phi, k, h) {
 }
 
 
-#' Title
+#' Run method of analogues to obtain predictions
 #'
 #' @param y vector of length t, the observed time series
 #' @param h integer horizon for which the prediction is desired
 #' @param k integer number of analogues to use
+#' @param method which method to use to compute simlarity, one of "uniform",
+#' "seasonal" or "distance"
 #' @param ... other parameters to pass to similarity functions
 #'
-#' @returns
+#' @returns named list
 return_analogue_preds <- function(y, h, k, method, ...) {
   args <- list(...)
   t <- length(y)

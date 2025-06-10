@@ -280,3 +280,11 @@ analogue_sim_data |>
   ggplot() +
   geom_line(aes(x=season_week, y=sq_error, color = factor(h))) + facet_wrap(.~pred_date_season)
 
+tmp <- run_analogue_simulation(
+  data = ma_dat,
+  start_idx = 105,
+  outcome_col = "unweighted_ili",
+  h_vals = 1:6,
+  k_val_seas = 30,
+  k_vals_dist = seq(1, 15, by=2))
+
