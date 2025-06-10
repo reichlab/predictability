@@ -22,7 +22,7 @@ The idea is to use a time-series of observations to estimate a future value give
 We start by loading some utility functions and real data to use as an example. The data is Influenza Like Illness (ILI) data from Massachusetts from the 2010/2011 season through the 2019/2020 season. We use the `unweighted_ili` variable, and create a smooth version of this as well.
 ```{r}
 library(tidyverse)
-source("R/knn-utils.R")
+source("R/analogue-utils.R")
 
 ma_dat <- cdcfluview::ilinet(region = "state", years = 2010:2019) |>
   filter(region == "Massachusetts") |>
