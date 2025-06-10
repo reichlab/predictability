@@ -91,6 +91,7 @@ get_analogues <- function(phi, k, h) {
 #' @param ... other parameters to pass to similarity functions
 #'
 #' @returns named list
+#' @export
 return_analogue_preds <- function(y, h, k, method, ...) {
   args <- list(...)
   t <- length(y)

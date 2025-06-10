@@ -46,7 +46,7 @@ run_analogue_simulation <- function(
   seas_data <- expand.grid(
     pred_date_idx = start_idx:(nrow(data)-maxh),
     h = h_vals,
-    k = k_vals_dist,
+    k = k_val_seas,
     method = c("seasonal"),
     stringsAsFactors = FALSE
   ) |>
@@ -66,13 +66,13 @@ run_analogue_simulation <- function(
   registerDoParallel(cl)
 
   # Parallel loop using foreach
-  i <- NULL
+  i <- NULL ## needed to define the global variable to avoid check warnings
   preds <- foreach(i = 1:nrow(analogue_sim_data), .combine = 'c') %dopar% {
     idx <- analogue_sim_data$pred_date_idx[i]
     if (is.na(idx) || idx <= 1) return(NA)  # safety check
 
-    result <- return_analogue_preds(
-      y = data[1:idx, outcome_col],
+    result <- predictability::return_analogue_preds(
+      y = data[[outcome_col]][1:idx],
       h = analogue_sim_data$h[i],
       k = analogue_sim_data$k[i],
       method = analogue_sim_data$method[i],
@@ -90,7 +90,7 @@ run_analogue_simulation <- function(
   analogue_sim_data$pred <- preds
   analogue_sim_data$target_date_idx <- analogue_sim_data$pred_date_idx + analogue_sim_data$h
 
-  analogue_sim_data$target <- data[analogue_sim_data$target_date_idx, outcome_col]
+  analogue_sim_data$target <- data[[outcome_col]][analogue_sim_data$target_date_idx]
   analogue_sim_data$sq_error <- (analogue_sim_data$pred - analogue_sim_data$target)^2
   analogue_sim_data$pred_date_season <- data$season[analogue_sim_data$pred_date_idx]
   analogue_sim_data$target_date_season <- data$season[analogue_sim_data$target_date_idx]

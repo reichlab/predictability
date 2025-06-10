@@ -2,3 +2,5 @@
 ^\\.Rproj\\.user$
 predictability.Rproj
 inst/predictability-vignette.html
+^.*\.Rproj$
+^\.Rproj\.user$
