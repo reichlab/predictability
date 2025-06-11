@@ -30,6 +30,9 @@ run_analogue_simulation <- function(
     k_val_seas
 ){
 
+  ## TODO: add check that things are sorted on date
+  ## TODO: add other checks?
+
   maxh <- max(h_vals)
 
   dist_data <- expand.grid(
@@ -151,6 +154,9 @@ plot_analogue_sim <- function(
     ggplot() +
     geom_point(aes(x=.data$rsq_seas, y=.data$rsq_dist, color=.data$pred_date_season)) +
     geom_abline(slope=1, intercept=0) +
-    facet_wrap(.~h)
+    facet_wrap(.~h) +
+    ## limit plot to (0,1) on both axes and squish oob points
+    scale_x_continuous(limits = c(0, 1), oob = scales::squish) +
+    scale_y_continuous(limits = c(0, 1), oob = scales::squish)
   print(p)
 }

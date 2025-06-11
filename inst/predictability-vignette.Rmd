@@ -22,7 +22,8 @@ The idea is to use a time-series of observations to estimate a future value give
 We start by loading some utility functions and real data to use as an example. The data is Influenza Like Illness (ILI) data from Massachusetts from the 2010/2011 season through the 2019/2020 season. We use the `unweighted_ili` variable, and create a smooth version of this as well.
 ```{r}
 library(tidyverse)
-source("R/analogue-utils.R")
+library(predictability)
+theme_set(theme_bw())
 
 ma_dat <- cdcfluview::ilinet(region = "state", years = 2010:2019) |>
   filter(region == "Massachusetts") |>
@@ -231,107 +232,121 @@ Seasons where the distance method is worse than the seasonal method are below th
 Nearly all seasons show positive predictability when h=1 and none do when h=6.
 
 ```{r analogue-sim}
-library(foreach)
-library(doParallel)
-
-start_idx <- 105 ## drop first two seasons
-maxh <- 6
-maxk <- 15
-
-dist_data <- expand.grid(
-  pred_date_idx = start_idx:(nrow(ma_dat)-maxh),
-  h = 1:maxh,
-  k = seq(1, maxk, by=2),
-  method = c("distance"),
-  stringsAsFactors = FALSE
-) |>
-  mutate(
-    pred = NA
-  )
-
-seas_data <- expand.grid(
-  pred_date_idx = start_idx:(nrow(ma_dat)-maxh),
-  h = 1:maxh,
-  k = 30,
-  method = c("seasonal"),
-  stringsAsFactors = FALSE
-) |>
-  mutate(
-    pred = NA
-  )
-
-analogue_sim_data <- bind_rows(
-  dist_data,
-  seas_data
+sim_data <- run_analogue_simulation(
+  data = ma_dat,
+  outcome_col = "unweighted_ili",
+  h_vals = 1:6,
+  start_idx = 105,
+  k_vals_dist = seq(1, 15, by = 2),
+  k_val_seas = 30
 )
 
+plot_analogue_sim(sim_data, k_val_dist = 5)
+```
 
-# Set up parallel backend
-num_cores <- detectCores() - 1  # Use all but one core
-cl <- makeCluster(num_cores)
-registerDoParallel(cl)
+## Simulation with random walk
 
-# Parallel loop using foreach
-preds <- foreach(i = 1:nrow(analogue_sim_data), .combine = 'c') %dopar% {
-  idx <- analogue_sim_data$pred_date_idx[i]
-  if (is.na(idx) || idx <= 1) return(NA)  # safety check
+Seasonal analogues don't make sense in the context of a random walk, so this example doesn't really show much, except that the method of analogues for distance does fairly well for short horizons here.
 
-  result <- return_analogue_preds(
-    y = ma_dat$unweighted_ili[1:idx],
-    h = analogue_sim_data$h[i],
-    k = analogue_sim_data$k[i],
-    method = analogue_sim_data$method[i],
-    p = 4,
-    rho = pi / 52,
-    eta = 1 / 10
-  )
-  result$pred
+```{r}
+## simulate RW data
+set.seed(42)
+rw_sim_data <- tibble(
+  season = rep(2010:2020, each = 52),
+  season_week = rep(1:52, times = 11),
+  date = cdcfluview::mmwr_week_to_date(
+    week = season_week,
+    year = season
+  ),
+  target = cumsum(rnorm(572, mean = 0, sd = 1))
+)
+
+## plot RW data
+ggplot(rw_sim_data, aes(x = date, y = target)) +
+  geom_line() +
+  labs(title = expression(paste("Random Walk Simulation Data (", sigma, "=1)")),
+       x = "Date",
+       y = "Target Value") +
+  theme_minimal()
+```
+
+
+```{r}
+## run analogue simulation
+rw_sim_results <- run_analogue_simulation(
+  data = rw_sim_data,
+  outcome_col = "target",
+  h_vals = 1:6,
+  start_idx = 105,
+  k_vals_dist = seq(1, 15, by = 2),
+  k_val_seas = 30
+)
+plot_analogue_sim(rw_sim_results, k_val_dist = 5)
+```
+
+```{r, eval=FALSE}
+## simulate sarima  process, adapted from Copilot
+set.seed(123)
+
+# Parameters
+n <- 572  # 11 years of weekly data, 1st year flat
+phi <- 0.8  # Seasonal AR coefficient
+period <- 52  # Annual periodicity
+
+# Initialize the time series
+sar_process <- numeric(n)
+
+# Simulate the SAR(1)[52] process
+for (t in (period + 1):n) {
+  sar_process[t] <- phi * sar_process[t - period] + rnorm(1, sd=.01)
 }
 
-# Stop the cluster after work is done
-stopCluster(cl)
+# Plot the result
+ts.plot(sar_process, main = "Simulated SAR(1)[52] Process (Annual Periodicity in Weekly Data)",
+        ylab = "Value", xlab = "Week")
 
-# Assign predictions back to analogue_sim_data
-analogue_sim_data$pred <- preds
-analogue_sim_data$target_date_idx <- analogue_sim_data$pred_date_idx + analogue_sim_data$h
-analogue_sim_data$season_week <- ma_dat$season_week[analogue_sim_data$pred_date_idx]
 
-analogue_sim_data$target_unweighted_ili <- ma_dat$unweighted_ili[analogue_sim_data$target_date_idx]
-analogue_sim_data$unweighted_ili <- ma_dat$unweighted_ili[analogue_sim_data$pred_date_idx]
-analogue_sim_data$sq_error <- (analogue_sim_data$pred - analogue_sim_data$target_unweighted_ili)^2
-analogue_sim_data$pred_date_season <- ma_dat$season[analogue_sim_data$pred_date_idx]
-analogue_sim_data$target_date_season <- ma_dat$season[analogue_sim_data$target_date_idx]
+```
 
-analogue_data_summary <- analogue_sim_data |>
-  group_by(pred_date_season, method, k, h) |>
-  summarise(mse = mean(sq_error, na.rm = TRUE),
-            sstot = mean((unweighted_ili - mean(unweighted_ili))^2),
-            total_weeks = n()
-  ) |>
-  group_by(pred_date_season, k, h) |>
-  ## scale mse by mse value
-  mutate(
-    rsq = 1 - mse/sstot
+## Other real data examples
+
+Measles
+
+```{r}
+measles_dat <- read_csv("https://raw.githubusercontent.com/nickreich/infectious_disease_predictability/refs/heads/master/Data/MEASLES_Cases_1909-2001_20150923120449.csv") |> 
+  select(season = YEAR, 
+         season_week = WEEK, 
+         target = CALIFORNIA) |> 
+  filter(season >= 1930, season <= 1965) |> 
+  mutate(date = cdcfluview::mmwr_week_to_date(
+    week = season_week,
+    year = season
+    ),
+    ## impute NA values
+    target = zoo::na.approx(target, na.rm = FALSE)
   )
 
-## clumsily join k=30 seasonal with each separate distance
-rsq_data <- analogue_data_summary |>
-  select(pred_date_season, method, rsq, k, h) |>
-  filter(method == "distance") |>
-  left_join(
-    filter(analogue_data_summary, method == "seasonal"),
-    by = c("pred_date_season", "h")
-  ) |> 
-  rename(rsq_seasonal = rsq.y,
-         rsq_distance = rsq.x)
+## plot data
+ggplot(measles_dat, aes(x = date, y = target)) +
+  geom_line() +
+  labs(title = "Measles Cases in California (1928-1977)",
+       x = "Date",
+       y = "Number of Cases")
+```
 
-rsq_data |>
-  filter(k.x==9) |>
-  ggplot() +
-  geom_point(aes(x=rsq_seasonal, y=rsq_distance, color=pred_date_season)) +
-  coord_cartesian(xlim = c(0,1), ylim=c(-0.1,1)) +
-  geom_abline(slope=1, intercept=0) +
-  facet_wrap(.~h)
+
+```{r}
+## run analogue simulation
+measles_sim_results <- run_analogue_simulation(
+  data = measles_dat,
+  outcome_col = "target",
+  h_vals = 1:6,
+  start_idx = 105,
+  k_vals_dist = seq(1, 7, by = 2),
+  k_val_seas = 30
+)
+p <- plot_analogue_sim(measles_sim_results, k_val_dist = 5)
+plotly::ggplotly(p)
 ```
 
 
@@ -342,4 +357,5 @@ to compute and compare:
  - mean/variance of distances: how "good" are the analogues
  - mean/variance of the analogue future values: what is the uncertainty
  - could look at the metrics/results with and without smoothing of original data
+ - compare predictability of flu seasons with forecast score metrics
 
