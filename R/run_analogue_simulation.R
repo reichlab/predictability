@@ -141,22 +141,28 @@ run_analogue_simulation <- function(
 #'
 #' @param analogue_sim_data output from run_analogue_sim
 #' @param k_val_dist k_val to plot
+#' @param squish logical, whether to squish OOB points or not in the plot
 #'
 #' @export
 #' @import ggplot2
 #'
 plot_analogue_sim <- function(
     analogue_sim_data,
-    k_val_dist
+    k_val_dist,
+    squish = FALSE
 ) {
   p <- analogue_sim_data[["rsq_data"]] |>
     dplyr::filter(.data$k_dist==k_val_dist) |>
     ggplot() +
     geom_point(aes(x=.data$rsq_seas, y=.data$rsq_dist, color=.data$pred_date_season)) +
     geom_abline(slope=1, intercept=0) +
-    facet_wrap(.~h) +
+    facet_wrap(.~h)
+
+  if(squish){
     ## limit plot to (0,1) on both axes and squish oob points
-    scale_x_continuous(limits = c(0, 1), oob = scales::squish) +
-    scale_y_continuous(limits = c(0, 1), oob = scales::squish)
+    p <- p +
+      scale_x_continuous(limits = c(0, 1), oob = scales::squish) +
+      scale_y_continuous(limits = c(0, 1), oob = scales::squish)
+  }
   print(p)
 }
