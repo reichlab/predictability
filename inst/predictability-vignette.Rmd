@@ -308,9 +308,11 @@ ts.plot(sar_process, main = "Simulated SAR(1)[52] Process (Annual Periodicity in
 
 ```
 
-## Other real data examples
+## Analyzing Measles data from Scarpino et al
 
-Measles
+One of the datasets used in Scarpino et al was a Measles dataset. I excerpted 1930-1965 data.
+Note in the below plots that more variability is described in some of the smaller years.
+
 
 ```{r}
 measles_dat <- read_csv("https://raw.githubusercontent.com/nickreich/infectious_disease_predictability/refs/heads/master/Data/MEASLES_Cases_1909-2001_20150923120449.csv") |> 
@@ -338,7 +340,7 @@ ggplot(measles_dat, aes(x = date, y = target)) +
 ```
 
 
-```{r}
+```{r, fig.keep="last"}
 ## run analogue simulation
 measles_sim_results <- run_analogue_simulation(
   data = measles_dat,
@@ -349,13 +351,17 @@ measles_sim_results <- run_analogue_simulation(
   k_val_seas = 50
 )
 p <- plot_analogue_sim(measles_sim_results, k_val_dist = 15)
-plotly::ggplotly(p)
+plotly::ggplotly(plot_analogue_sim(measles_sim_results, k_val_dist = 15, squish = TRUE))
 ```
-Note in the above plot that more variability is described in some of the smaller years.
 
-## Analyzing same data as Scarpino
+## Analyzing same synthetic data as Scarpino
 
-```{r}
+In the Scarpino et al paper, they analyze a number of synthetic datasets for "predictability". 
+Some of them include a sine wave with a period of 52 weeks, a sine wave with an offset so that the periodicity is not 52 weeks or a factor of 52, and just noise.
+It turns out that these three datasets, when analyzed by the proposed approach, map to three very specific extremes of the $R^2$ figure.
+The $R^2$ plots below squish all points to lie in (0,1).
+
+```{r generate-simulated-data}
 ## number of obs from the original dataset was 1938 ~ 37 years
 nyears <- 37
 n <- 37*52
@@ -371,17 +377,20 @@ scarpino_data <- tibble(
   sine_noise = sin(1:n) + rnorm(n, 0, 0.001),
   sine_noise_52w = sin((1:n)/(52/(2*pi))) + rnorm(n, 0, 0.001)
 )
+```
 
+### Sin data with 52 week periodicity
+
+```{r plot-sine-52w}
 ggplot(scarpino_data) +
   geom_line(aes(x = date, y = sine_noise_52w)) +
-  labs(title = "Synthetic Data with 52-week Sine Wave",
+  labs(title = "Sin curve with 52-week period",
        x = "Date",
        y = "Value") +
   theme_minimal()
 ```
 
-
-```{r}
+```{r predict-sine-52w, fig.keep='last'}
 sin52w_sim_results <- run_analogue_simulation(
   data = scarpino_data,
   outcome_col = "sine_noise_52w",
@@ -390,21 +399,23 @@ sin52w_sim_results <- run_analogue_simulation(
   k_vals_dist = seq(1, 15, by = 2),
   k_val_seas = 50
 )
-p <- plot_analogue_sim(sin52w_sim_results, k_val_dist = 15)
+p <- plot_analogue_sim(sin52w_sim_results, k_val_dist = 15, squish = TRUE)
 plotly::ggplotly(p)
 ```
 
-```{r}
+### Sin data with $2 \cdot \pi$ periodicity
+
+```{r plot-sine-offset}
 ggplot(scarpino_data) +
   geom_line(aes(x = date, y = sine_noise)) +
-  labs(title = "Synthetic Data with Sine",
+  labs(title = "Sin curve with 2*pi week periodicity",
        x = "Date",
        y = "Value") +
   theme_minimal()
 ```
 
 
-```{r}
+```{r predict-sine-offset, fig.keep='last'}
 sin_sim_results <- run_analogue_simulation(
   data = scarpino_data,
   outcome_col = "sine_noise",
@@ -413,12 +424,12 @@ sin_sim_results <- run_analogue_simulation(
   k_vals_dist = seq(1, 15, by = 2),
   k_val_seas = 50
 )
-p <- plot_analogue_sim(sin_sim_results, k_val_dist = 15)
+p <- plot_analogue_sim(sin_sim_results, k_val_dist = 15, squish = TRUE)
 plotly::ggplotly(p)
 ```
 
 
-```{r}
+```{r plot-noise}
 ggplot(scarpino_data) +
   geom_line(aes(x = date, y = noise_full)) +
   labs(title = "Synthetic Data with just noise",
@@ -428,7 +439,7 @@ ggplot(scarpino_data) +
 ```
 
 
-```{r}
+```{r predict-noise, fig.keep='last'}
 noise_sim_results <- run_analogue_simulation(
   data = scarpino_data,
   outcome_col = "noise_full",
@@ -437,7 +448,7 @@ noise_sim_results <- run_analogue_simulation(
   k_vals_dist = seq(1, 15, by = 2),
   k_val_seas = 50
 )
-p <- plot_analogue_sim(noise_sim_results, k_val_dist = 15)
+p <- plot_analogue_sim(noise_sim_results, k_val_dist = 15, squish = TRUE)
 plotly::ggplotly(p)
 ```
 
@@ -451,4 +462,5 @@ to compute and compare:
  - mean/variance of the analogue future values: what is the uncertainty
  - could look at the metrics/results with and without smoothing of original data
  - compare predictability of flu seasons with forecast score metrics
+ - compare predictability metric from Scarpino/White to this method
 

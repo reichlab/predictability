@@ -9,7 +9,7 @@
 ##  - mean/variance of distances: how "good" are the analogues
 ##  - mean/variance of the analogue future values: what is the uncertainty
 
-source("R/knn-utils.R")
+source("R/analogue-utils.R")
 
 ma_dat <- cdcfluview::ilinet(region = "state", years = 2010:2019) |>
   filter(region == "Massachusetts") |>
@@ -28,7 +28,7 @@ this_h <- 4
 ma_dat[idx, ]
 
 ## get the analogues
-analogue_data <- return_knn_preds(
+analogue_data <- return_analogue_preds(
   y = ma_dat$smooth_unweighted_ili[1:idx],
   h = this_h,
   k = 10,
@@ -72,12 +72,12 @@ ggplot(ma_dat) +
                  x = smooth_unweighted_ili_lag1),
              color = "blue", size = 3, shape = 4) +
   ## plot the analogues
-  geom_point(data = ma_dat[analogue_data[["nn_indices"]]$topk_indices, ],
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
              aes(y = smooth_unweighted_ili,
                  x = smooth_unweighted_ili_lag1),
              color = "red", size = 3, shape = 3) +
   ## plot the analogues' futures
-  geom_point(data = ma_dat[analogue_data[["nn_indices"]]$topk_indices+this_h, ],
+  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
              aes(y = smooth_unweighted_ili,
                  x = smooth_unweighted_ili_lag1),
              color = "red", shape = 20) +
