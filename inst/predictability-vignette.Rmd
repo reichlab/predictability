@@ -453,6 +453,96 @@ plotly::ggplotly(p)
 ```
 
 
+## re-run permutation entropy analysis
+```{r}
+library(pdc)
+```
+
+Using influenza (ILI in Massachusetts) as an outcome:
+```{r}
+my_dat <- data.frame(
+  ma_ili = ma_dat$unweighted_ili,
+  ma_smooth_ili = ma_dat$smooth_unweighted_ili,
+  sin_data = sin(1:nrow(ma_dat)),
+  sin_data_52w = sin(1:nrow(ma_dat)/(52/(2*pi))),
+  sin_data_52w_noise = sin(1:nrow(ma_dat)/(52/(2*pi))) + rnorm(nrow(ma_dat), sd=.1),
+  sin_data_104w = sin(1:nrow(ma_dat)/(104/(2*pi))),
+  noise = rnorm(nrow(ma_dat)),
+  random_walk = cumsum(rnorm(nrow(ma_dat), mean = 0, sd = 1))
+)
+
+## create PE storage
+pe <- my_dat
+
+## compute the permutation entropy for the unweighted ILI data
+for(i in 15:nrow(ma_dat)){
+  ## compute the permutation entropy for each column
+  for(colname in colnames(my_dat)){
+    pe_tmp <- pdc::entropyHeuristic(my_dat[1:i, colname], m.min = 2, m.max = 7)
+    pe[i, colname] <- min(pe_tmp$entropy.values[,3], na.rm = TRUE)
+  }    
+}
+
+pe_long <- pe |> 
+  mutate(week_start = ma_dat$week_start) |> 
+  pivot_longer(!week_start)
+
+ggplot(pe_long, aes(x = week_start)) +
+  geom_path(aes(y = value, color = name)) +
+  scale_color_brewer(type = "qual") +
+  coord_cartesian(ylim = c(0, 1))
+
+my_dat |> 
+  mutate(week_start = ma_dat$week_start) |> 
+  pivot_longer(!week_start) |> 
+  ggplot(aes(x = week_start)) +
+  geom_path(aes(y = value, color = name)) +
+  scale_color_brewer(type = "qual")
+```
+
+Using measles data as an outcome
+```{r measles-PE}
+n_measles <- nrow(measles_dat)
+my_dat <- data.frame(
+  measles = measles_dat$target,
+  sin_data = sin(1:n_measles),
+  sin_data_52w = sin(1:n_measles/(52/(2*pi))),
+  sin_data_52w_noise = sin(1:n_measles/(52/(2*pi))) + rnorm(n_measles, sd=.1),
+  sin_data_104w = sin(1:n_measles/(104/(2*pi))),
+  noise = rnorm(n_measles),
+  random_walk = cumsum(rnorm(n_measles, mean = 0, sd = 1))
+)
+
+## create PE storage
+pe <- my_dat
+
+## compute the permutation entropy for the unweighted ILI data
+for(i in 15:n_measles){
+  ## compute the permutation entropy for each column
+  for(colname in colnames(my_dat)){
+    pe_tmp <- pdc::entropyHeuristic(my_dat[1:i, colname], m.min = 2, m.max = 7)
+    pe[i, colname] <- min(pe_tmp$entropy.values[,3], na.rm = TRUE)
+  }    
+}
+
+pe_long <- pe |> 
+  mutate(week_start = measles_dat$date) |> 
+  pivot_longer(!week_start)
+
+ggplot(pe_long, aes(x = week_start)) +
+  geom_path(aes(y = value, color = name)) +
+  scale_color_brewer(type = "qual") +
+  coord_cartesian(ylim = c(0, 1))
+
+my_dat |> 
+  mutate(week_start = measles_dat$date) |> 
+  pivot_longer(!week_start) |> 
+  filter(name != "measles") |> 
+  ggplot(aes(x = week_start)) +
+  geom_path(aes(y = value, color = name)) +
+  scale_color_brewer(type = "qual") 
+```
+
 
 ## Ideas for next steps
 
