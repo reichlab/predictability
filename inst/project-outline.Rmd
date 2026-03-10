@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Predictability outline"
 author: "Nick Reich"
 date: "`r Sys.Date()`"
 output: html_document
@@ -70,5 +70,6 @@ theta_
         - what is the distribution of HC and CLIM error? how much variation is there in the spread between the two across locations? Could have a figure where x-axis is location (sorted by high-to-low hindcast error) and the y-axis is RMSE. For each location, we plot a line segment connecting the climatology error to the hindcast error to show the spread across locations.
         - what is the distribution of skill of MOA stratified by horizon? how much variation is there across locations? what are the predictions limits by horizon? Similar figure to above, but faceted vertically by horizon, scaled so for each location 1 is climatology error and 0 is hindcast error and then showing the average MOA error (across all studied seasons) between them for each state.
 
+4. For flu in US, one of point or probabilistic prediction. Look at skill computed by season week. Hypothesis is that the range of skill is wider from December through March, when SS^* is more variable, but it will be interesting to see how the scores for the different models change over time. Likely the CLIM score will be lower at the shoulders of the season, so there will be less room for improvement.
 
-4. Ultimate goal: repeat the above analyses (probably choosing one of either point or probabilistic analyses) for horizons 1-10 weeks for a number of different disease/data source pairs and plot connected lines where x-axis is horizon, y-axis is skill. Color could be disease (e.g, flu datasets all are orange). Hypothesis is that skill decreases as a function of horizon, potentially getting below zero.
+5. Ultimate goal: repeat the above analyses (probably choosing one of either point or probabilistic analyses) for horizons 1-10 weeks for a number of different disease/data source pairs and plot connected lines where x-axis is horizon, y-axis is skill. Color could be disease (e.g, flu datasets all are orange). Hypothesis is that skill decreases as a function of horizon, potentially getting below zero.
