@@ -17,27 +17,37 @@ This vignette is designed to explore an approach to estimating the "predictabili
 
 The idea is to use a time-series of observations to estimate a future value given the past values. This is done by finding similar past observations (analogues) and using their future values to estimate the the future value.
 
+The simple power of this idea for academic research in predictability can be traced back to Edward Lorenz using analogues to measure the predictability of atmospheric measurements [add citation].
+
 ## A few simple examples with real data
 
 We start by loading some utility functions and real data to use as an example. The data is Influenza Like Illness (ILI) data from Massachusetts from the 2010/2011 season through the 2019/2020 season. We use the `unweighted_ili` variable, and create a smooth version of this as well.
-```{r}
+```{r setup-data}
 library(tidyverse)
 library(predictability)
 theme_set(theme_bw())
 
 ma_dat <- cdcfluview::ilinet(region = "state", years = 2010:2019) |>
   filter(region == "Massachusetts") |>
-  mutate(season = ifelse(week < 40,
-                         paste0(year - 1, "/", year),
-                         paste0(year, "/", year+1)),
-         unweighted_ili_lag1  = lag(unweighted_ili),
-         smooth_unweighted_ili = zoo::rollmean(unweighted_ili, k = 4, fill = NA, align = "right"),
-         smooth_unweighted_ili_lag1 = lag(smooth_unweighted_ili, 1)
+  mutate(
+    season = ifelse(
+      week < 40,
+      paste0(year - 1, "/", year),
+      paste0(year, "/", year + 1)
+    ),
+    unweighted_ili_lag1 = lag(unweighted_ili),
+    smooth_unweighted_ili = zoo::rollmean(
+      unweighted_ili,
+      k = 4,
+      fill = NA,
+      align = "right"
+    ),
+    smooth_unweighted_ili_lag1 = lag(smooth_unweighted_ili, 1)
   )
 ```
 
 We want to examine the analogues and those analogues' futures for a single point in the time-series as a starting place. For this example, we will pick week 49 of 2019, when a large season is just starting to take off. We will look 4 weeks ahead. We will use 10 analogues (`k=10`) and use Euclidean distance to determine analogues, where an analogue to $y_t$ is found by finding the shortest distance of $(y_t, y_t-1)$ to $(y_{t^*}, y_{t^*-1})$ for all possible values of $t^*<t$. This is done by setting `p=2`, but including higher dimensional distance calculations is possible by using a larger $p$.
-```{r}
+```{r ma-analogues-setup}
 idx <- 479 ## row 479 is week 49, 20219
 this_h <- 4
 
@@ -52,58 +62,81 @@ analogue_data <- return_analogue_preds(
 ```
 
 Now we can visualize the analogues and their futures. The analogues are shown as red `+` symbols, and the future values of the analogues are shown as red circles. The observation is a blue `x` and the 4-week ahead prediction based on the analogue futures (a weighted average of the futures) is the green asterisk.
-```{r}
+```{r ma-analogues-time-series, fig.keep='last'}
 ggplot(ma_dat) +
   geom_path(aes(x = week_start, y = unweighted_ili)) +
   ## plot the index point
-  geom_point(data = ma_dat[idx, ],
-             aes(x = week_start, y = unweighted_ili),
-             color = "blue", size = 3, shape = 4) +
+  geom_point(
+    data = ma_dat[idx, ],
+    aes(x = week_start, y = unweighted_ili),
+    color = "blue",
+    size = 3,
+    shape = 4
+  ) +
   ## plot the analogues
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
-             aes(x = week_start, y = unweighted_ili),
-             color = "red", size = 3, shape = 3) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+    aes(x = week_start, y = unweighted_ili),
+    color = "red",
+    size = 3,
+    shape = 3
+  ) +
   ## plot the analogues' futures
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
-             aes(x = week_start, y = unweighted_ili),
-             color = "red", shape = 20) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices + this_h, ],
+    aes(x = week_start, y = unweighted_ili),
+    color = "red",
+    shape = 20
+  ) +
   ## plot the prediction
-  geom_point(x = ma_dat$week_start[idx + this_h],
-             y = analogue_data$pred,
-             color = "green", size = 3, shape = 8) +
+  geom_point(
+    x = ma_dat$week_start[idx + this_h],
+    y = analogue_data$pred,
+    color = "green",
+    size = 3,
+    shape = 8
+  ) +
   ggtitle("10 analogues with p=2")
 ```
 
 
 Next, we can visualize the analogues in a 2D space of the past values. The x-axis is the value at time $t-1$ and the y-axis is the value at time $t$. The analogues are shown as red `+` symbols, and the future values of the analogues are shown as red circles. The observation is a blue `x`. (You may need to use plotly controls to zoom in a bit to see these.)
-```{r}
+```{r analogues-attractor, fig.keep='last'}
 p <- ggplot(ma_dat) +
-  geom_path(aes(y = unweighted_ili,
-                x = unweighted_ili_lag1),
-            alpha = .5) +
-  geom_point(aes(y = unweighted_ili,
-                x = unweighted_ili_lag1),
-            alpha = .2) +
+  geom_path(aes(y = unweighted_ili, x = unweighted_ili_lag1), alpha = .5) +
+  geom_point(aes(y = unweighted_ili, x = unweighted_ili_lag1), alpha = .2) +
   ## plot the index point
-  geom_point(data = ma_dat[idx, ],
-             aes(y = unweighted_ili,
-                 x = unweighted_ili_lag1),
-             color = "blue", size = 3, shape = 4) +
+  geom_point(
+    data = ma_dat[idx, ],
+    aes(y = unweighted_ili, x = unweighted_ili_lag1),
+    color = "blue",
+    size = 3,
+    shape = 4
+  ) +
   ## plot the analogues
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
-             aes(y = unweighted_ili,
-                 x = unweighted_ili_lag1),
-             color = "red", size = 3, shape = 3) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+    aes(y = unweighted_ili, x = unweighted_ili_lag1),
+    color = "red",
+    size = 3,
+    shape = 3
+  ) +
   ## plot the analogues' futures
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
-             aes(y = unweighted_ili,
-                 x = unweighted_ili_lag1),
-             color = "red", shape = 20) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices + this_h, ],
+    aes(y = unweighted_ili, x = unweighted_ili_lag1),
+    color = "red",
+    shape = 20
+  ) +
   ## plot the observation
-  annotate("point",
-           y = ma_dat$unweighted_ili[idx + this_h],
-           x = ma_dat$unweighted_ili_lag1[idx + this_h],
-           color = "blue", size = 3, shape = 20) +
+  annotate(
+    "point",
+    y = ma_dat$unweighted_ili[idx + this_h],
+    x = ma_dat$unweighted_ili_lag1[idx + this_h],
+    color = "blue",
+    size = 3,
+    shape = 20
+  ) +
   ## plot the prediction
   ## this doesn't make sense because the x isn't right.
   # annotate("point",
@@ -135,21 +168,36 @@ analogue_data <- return_analogue_preds(
 ggplot(ma_dat) +
   geom_path(aes(x = week_start, y = unweighted_ili)) +
   ## plot the index point
-  geom_point(data = ma_dat[idx, ],
-             aes(x = week_start, y = unweighted_ili),
-             color = "blue", size = 3, shape = 4) +
+  geom_point(
+    data = ma_dat[idx, ],
+    aes(x = week_start, y = unweighted_ili),
+    color = "blue",
+    size = 3,
+    shape = 4
+  ) +
   ## plot the analogues
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
-             aes(x = week_start, y = unweighted_ili),
-             color = "red", size = 3, shape = 3) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+    aes(x = week_start, y = unweighted_ili),
+    color = "red",
+    size = 3,
+    shape = 3
+  ) +
   ## plot the analogues' futures
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
-             aes(x = week_start, y = unweighted_ili),
-             color = "red", shape = 20) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices + this_h, ],
+    aes(x = week_start, y = unweighted_ili),
+    color = "red",
+    shape = 20
+  ) +
   ## plot the prediction
-  geom_point(x = ma_dat$week_start[idx + this_h],
-             y = analogue_data$pred,
-             color = "green", size = 3, shape = 8) +
+  geom_point(
+    x = ma_dat$week_start[idx + this_h],
+    y = analogue_data$pred,
+    color = "green",
+    size = 3,
+    shape = 8
+  ) +
   ggtitle("10 analogues with p=7")
 ```
 
@@ -163,11 +211,14 @@ The plot below shows the 30 nearest analogues (red crosses) for the blue observa
 mmwr_week_to_season_week <- function(
   mmwr_week,
   mmwr_year,
-  first_season_week = 31) {
+  first_season_week = 31
+) {
   last_season_week <- first_season_week - 1
   season_week <- ifelse(
     mmwr_week <= last_season_week,
-    mmwr_week + MMWRweek::MMWRweek(MMWRweek:::start_date(mmwr_year) - 1)$MMWRweek - last_season_week,
+    mmwr_week +
+      MMWRweek::MMWRweek(MMWRweek:::start_date(mmwr_year) - 1)$MMWRweek -
+      last_season_week,
     mmwr_week - last_season_week
   )
 
@@ -187,28 +238,43 @@ analogue_data <- return_analogue_preds(
   h = this_h,
   k = 30,
   method = "seasonal",
-  rho = pi/52,
+  rho = pi / 52,
   eta = 1
 )
 
 ggplot(ma_dat) +
   geom_path(aes(x = season_week, y = unweighted_ili, group = season)) +
   ## plot the index point
-  geom_point(data = ma_dat[idx, ],
-             aes(x = season_week, y = unweighted_ili),
-             color = "blue", size = 3, shape = 4) +
+  geom_point(
+    data = ma_dat[idx, ],
+    aes(x = season_week, y = unweighted_ili),
+    color = "blue",
+    size = 3,
+    shape = 4
+  ) +
   ## plot the analogues
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
-             aes(x = season_week, y = unweighted_ili),
-             color = "red", size = 3, shape = 3) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices, ],
+    aes(x = season_week, y = unweighted_ili),
+    color = "red",
+    size = 3,
+    shape = 3
+  ) +
   ## plot the analogues' futures
-  geom_point(data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices+this_h, ],
-             aes(x = season_week, y = unweighted_ili),
-             color = "red", shape = 20) +
+  geom_point(
+    data = ma_dat[analogue_data[["analogue_indices"]]$topk_indices + this_h, ],
+    aes(x = season_week, y = unweighted_ili),
+    color = "red",
+    shape = 20
+  ) +
   ## plot the prediction
-  geom_point(x = ma_dat$season_week[idx + this_h],
-             y = analogue_data$pred,
-             color = "green", size = 3, shape = 8) +
+  geom_point(
+    x = ma_dat$season_week[idx + this_h],
+    y = analogue_data$pred,
+    color = "green",
+    size = 3,
+    shape = 8
+  ) +
   ggtitle("30 analogues")
 
 ```
@@ -244,6 +310,30 @@ sim_data <- run_analogue_simulation(
 plot_analogue_sim(sim_data, k_val_dist = 5)
 ```
 
+And this plot shows, faceted by horizon, the $R^2_{DIST}$ value as a function of $k$ (number of analogues used) for each season (light lines) along with the mean $R^2_{DIST}$ across all seasons (thick black line). The dashed horizontal lines show the mean $R^2_{SEAS}$ (bottom line) as a reference point for the when a naive seasonal model would have made a better prediction, and the mean $R^2_{HINDCAST}$ across all seasons (top line) that approximates an upper bound of how much variability could be explained if we had perfect knowledge of the system.
+
+```{r}
+mean_rsq <- sim_data$rsq_data |> 
+  group_by(h) |> 
+  summarize(mean_rsq_seas = mean(rsq_seas),
+            min_rsq_seas = min(rsq_seas),
+            max_rsq_seas = max(rsq_seas),
+            mean_rsq_hindcast = mean(rsq_hindcast),
+            min_rsq_hindcast = min(rsq_hindcast),
+            max_rsq_hindcast = max(rsq_hindcast))
+
+ggplot(sim_data$rsq_data) +
+  geom_line(aes(x = k_dist, y = rsq_dist, group = pred_date_season), alpha = 0.2) +
+  ## add mean summary line
+  stat_summary(aes(x = k_dist, y = rsq_dist), fun = mean, geom = "line", color = "black", linewidth = 1.2) +
+  geom_hline(data = mean_rsq, aes(yintercept = mean_rsq_seas), linetype = "dashed") +
+  geom_hline(data = mean_rsq, aes(yintercept = mean_rsq_hindcast), linetype = "dashed") +
+  facet_wrap(.~h) +
+  ## oob squish y values below zero
+  scale_y_continuous(limits = c(0, 1), oob = scales::squish)
+```
+
+
 ## Simulation with random walk
 
 Seasonal analogues don't make sense in the context of a random walk, so this example doesn't really show much, except that the method of analogues for distance does fairly well for short horizons here.
@@ -264,9 +354,11 @@ rw_sim_data <- tibble(
 ## plot RW data
 ggplot(rw_sim_data, aes(x = date, y = target)) +
   geom_line() +
-  labs(title = expression(paste("Random Walk Simulation Data (", sigma, "=1)")),
-       x = "Date",
-       y = "Target Value") +
+  labs(
+    title = expression(paste("Random Walk Simulation Data (", sigma, "=1)")),
+    x = "Date",
+    y = "Target Value"
+  ) +
   theme_minimal()
 ```
 
@@ -289,21 +381,25 @@ plot_analogue_sim(rw_sim_results, k_val_dist = 5)
 set.seed(123)
 
 # Parameters
-n <- 572  # 11 years of weekly data, 1st year flat
-phi <- 0.8  # Seasonal AR coefficient
-period <- 52  # Annual periodicity
+n <- 572 # 11 years of weekly data, 1st year flat
+phi <- 0.8 # Seasonal AR coefficient
+period <- 52 # Annual periodicity
 
 # Initialize the time series
 sar_process <- numeric(n)
 
 # Simulate the SAR(1)[52] process
 for (t in (period + 1):n) {
-  sar_process[t] <- phi * sar_process[t - period] + rnorm(1, sd=.01)
+  sar_process[t] <- phi * sar_process[t - period] + rnorm(1, sd = .01)
 }
 
 # Plot the result
-ts.plot(sar_process, main = "Simulated SAR(1)[52] Process (Annual Periodicity in Weekly Data)",
-        ylab = "Value", xlab = "Week")
+ts.plot(
+  sar_process,
+  main = "Simulated SAR(1)[52] Process (Annual Periodicity in Weekly Data)",
+  ylab = "Value",
+  xlab = "Week"
+)
 
 
 ```
@@ -315,14 +411,15 @@ Note in the below plots that more variability is described in some of the smalle
 
 
 ```{r}
-measles_dat <- read_csv("https://raw.githubusercontent.com/nickreich/infectious_disease_predictability/refs/heads/master/Data/MEASLES_Cases_1909-2001_20150923120449.csv") |> 
-  select(season = YEAR, 
-         season_week = WEEK, 
-         target = CALIFORNIA) |> 
-  filter(season >= 1930, season <= 1965) |> 
-  mutate(date = cdcfluview::mmwr_week_to_date(
-    week = season_week,
-    year = season
+measles_dat <- read_csv(
+  "https://raw.githubusercontent.com/nickreich/infectious_disease_predictability/refs/heads/master/Data/MEASLES_Cases_1909-2001_20150923120449.csv"
+) |>
+  select(season = YEAR, season_week = WEEK, target = CALIFORNIA) |>
+  filter(season >= 1930, season <= 1965) |>
+  mutate(
+    date = cdcfluview::mmwr_week_to_date(
+      week = season_week,
+      year = season
     ),
     ## impute NA values
     target = zoo::na.approx(target, na.rm = FALSE)
@@ -334,13 +431,15 @@ measles_dat[which(measles_dat$date == "1942-04-05"), "target"] <- 6190
 ## plot data
 ggplot(measles_dat, aes(x = date, y = target)) +
   geom_line() +
-  labs(title = "Measles Cases in California (1928-1977)",
-       x = "Date",
-       y = "Number of Cases")
+  labs(
+    title = "Measles Cases in California (1928-1977)",
+    x = "Date",
+    y = "Number of Cases"
+  )
 ```
 
 
-```{r, fig.keep="last"}
+```{r measles-sim, fig.keep="last"}
 ## run analogue simulation
 measles_sim_results <- run_analogue_simulation(
   data = measles_dat,
@@ -351,7 +450,11 @@ measles_sim_results <- run_analogue_simulation(
   k_val_seas = 50
 )
 p <- plot_analogue_sim(measles_sim_results, k_val_dist = 15)
-plotly::ggplotly(plot_analogue_sim(measles_sim_results, k_val_dist = 15, squish = TRUE))
+plotly::ggplotly(plot_analogue_sim(
+  measles_sim_results,
+  k_val_dist = 15,
+  squish = TRUE
+))
 ```
 
 ## Analyzing same synthetic data as Scarpino
@@ -364,10 +467,10 @@ The $R^2$ plots below squish all points to lie in (0,1).
 ```{r generate-simulated-data}
 ## number of obs from the original dataset was 1938 ~ 37 years
 nyears <- 37
-n <- 37*52
+n <- 37 * 52
 
 scarpino_data <- tibble(
-  season = rep(2001:(2000+nyears), each = 52),
+  season = rep(2001:(2000 + nyears), each = 52),
   season_week = rep(1:52, times = nyears),
   date = cdcfluview::mmwr_week_to_date(
     week = season_week,
@@ -375,7 +478,7 @@ scarpino_data <- tibble(
   ),
   noise_full = rnorm(n),
   sine_noise = sin(1:n) + rnorm(n, 0, 0.001),
-  sine_noise_52w = sin((1:n)/(52/(2*pi))) + rnorm(n, 0, 0.001)
+  sine_noise_52w = sin((1:n) / (52 / (2 * pi))) + rnorm(n, 0, 0.001)
 )
 ```
 
@@ -384,9 +487,7 @@ scarpino_data <- tibble(
 ```{r plot-sine-52w}
 ggplot(scarpino_data) +
   geom_line(aes(x = date, y = sine_noise_52w)) +
-  labs(title = "Sin curve with 52-week period",
-       x = "Date",
-       y = "Value") +
+  labs(title = "Sin curve with 52-week period", x = "Date", y = "Value") +
   theme_minimal()
 ```
 
@@ -408,9 +509,11 @@ plotly::ggplotly(p)
 ```{r plot-sine-offset}
 ggplot(scarpino_data) +
   geom_line(aes(x = date, y = sine_noise)) +
-  labs(title = "Sin curve with 2*pi week periodicity",
-       x = "Date",
-       y = "Value") +
+  labs(
+    title = "Sin curve with 2*pi week periodicity",
+    x = "Date",
+    y = "Value"
+  ) +
   theme_minimal()
 ```
 
@@ -432,9 +535,7 @@ plotly::ggplotly(p)
 ```{r plot-noise}
 ggplot(scarpino_data) +
   geom_line(aes(x = date, y = noise_full)) +
-  labs(title = "Synthetic Data with just noise",
-       x = "Date",
-       y = "Value") +
+  labs(title = "Synthetic Data with just noise", x = "Date", y = "Value") +
   theme_minimal()
 ```
 
@@ -464,9 +565,10 @@ my_dat <- data.frame(
   ma_ili = ma_dat$unweighted_ili,
   ma_smooth_ili = ma_dat$smooth_unweighted_ili,
   sin_data = sin(1:nrow(ma_dat)),
-  sin_data_52w = sin(1:nrow(ma_dat)/(52/(2*pi))),
-  sin_data_52w_noise = sin(1:nrow(ma_dat)/(52/(2*pi))) + rnorm(nrow(ma_dat), sd=.1),
-  sin_data_104w = sin(1:nrow(ma_dat)/(104/(2*pi))),
+  sin_data_52w = sin(1:nrow(ma_dat) / (52 / (2 * pi))),
+  sin_data_52w_noise = sin(1:nrow(ma_dat) / (52 / (2 * pi))) +
+    rnorm(nrow(ma_dat), sd = .1),
+  sin_data_104w = sin(1:nrow(ma_dat) / (104 / (2 * pi))),
   noise = rnorm(nrow(ma_dat)),
   random_walk = cumsum(rnorm(nrow(ma_dat), mean = 0, sd = 1))
 )
@@ -475,16 +577,16 @@ my_dat <- data.frame(
 pe <- my_dat
 
 ## compute the permutation entropy for the unweighted ILI data
-for(i in 15:nrow(ma_dat)){
+for (i in 15:nrow(ma_dat)) {
   ## compute the permutation entropy for each column
-  for(colname in colnames(my_dat)){
+  for (colname in colnames(my_dat)) {
     pe_tmp <- pdc::entropyHeuristic(my_dat[1:i, colname], m.min = 2, m.max = 7)
-    pe[i, colname] <- min(pe_tmp$entropy.values[,3], na.rm = TRUE)
-  }    
+    pe[i, colname] <- min(pe_tmp$entropy.values[, 3], na.rm = TRUE)
+  }
 }
 
-pe_long <- pe |> 
-  mutate(week_start = ma_dat$week_start) |> 
+pe_long <- pe |>
+  mutate(week_start = ma_dat$week_start) |>
   pivot_longer(!week_start)
 
 ggplot(pe_long, aes(x = week_start)) +
@@ -492,9 +594,9 @@ ggplot(pe_long, aes(x = week_start)) +
   scale_color_brewer(type = "qual") +
   coord_cartesian(ylim = c(0, 1))
 
-my_dat |> 
-  mutate(week_start = ma_dat$week_start) |> 
-  pivot_longer(!week_start) |> 
+my_dat |>
+  mutate(week_start = ma_dat$week_start) |>
+  pivot_longer(!week_start) |>
   ggplot(aes(x = week_start)) +
   geom_path(aes(y = value, color = name)) +
   scale_color_brewer(type = "qual")
@@ -506,9 +608,10 @@ n_measles <- nrow(measles_dat)
 my_dat <- data.frame(
   measles = measles_dat$target,
   sin_data = sin(1:n_measles),
-  sin_data_52w = sin(1:n_measles/(52/(2*pi))),
-  sin_data_52w_noise = sin(1:n_measles/(52/(2*pi))) + rnorm(n_measles, sd=.1),
-  sin_data_104w = sin(1:n_measles/(104/(2*pi))),
+  sin_data_52w = sin(1:n_measles / (52 / (2 * pi))),
+  sin_data_52w_noise = sin(1:n_measles / (52 / (2 * pi))) +
+    rnorm(n_measles, sd = .1),
+  sin_data_104w = sin(1:n_measles / (104 / (2 * pi))),
   noise = rnorm(n_measles),
   random_walk = cumsum(rnorm(n_measles, mean = 0, sd = 1))
 )
@@ -517,16 +620,16 @@ my_dat <- data.frame(
 pe <- my_dat
 
 ## compute the permutation entropy for the unweighted ILI data
-for(i in 15:n_measles){
+for (i in 15:n_measles) {
   ## compute the permutation entropy for each column
-  for(colname in colnames(my_dat)){
+  for (colname in colnames(my_dat)) {
     pe_tmp <- pdc::entropyHeuristic(my_dat[1:i, colname], m.min = 2, m.max = 7)
-    pe[i, colname] <- min(pe_tmp$entropy.values[,3], na.rm = TRUE)
-  }    
+    pe[i, colname] <- min(pe_tmp$entropy.values[, 3], na.rm = TRUE)
+  }
 }
 
-pe_long <- pe |> 
-  mutate(week_start = measles_dat$date) |> 
+pe_long <- pe |>
+  mutate(week_start = measles_dat$date) |>
   pivot_longer(!week_start)
 
 ggplot(pe_long, aes(x = week_start)) +
@@ -534,13 +637,13 @@ ggplot(pe_long, aes(x = week_start)) +
   scale_color_brewer(type = "qual") +
   coord_cartesian(ylim = c(0, 1))
 
-my_dat |> 
-  mutate(week_start = measles_dat$date) |> 
-  pivot_longer(!week_start) |> 
-  filter(name != "measles") |> 
+my_dat |>
+  mutate(week_start = measles_dat$date) |>
+  pivot_longer(!week_start) |>
+  filter(name != "measles") |>
   ggplot(aes(x = week_start)) +
   geom_path(aes(y = value, color = name)) +
-  scale_color_brewer(type = "qual") 
+  scale_color_brewer(type = "qual")
 ```
 
 

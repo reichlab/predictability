@@ -1,4 +1,3 @@
-
 #' Run simulation using method of analogues to determine predictability
 #'
 #' @param data data.frame with the data. This function assumes that this object
@@ -22,21 +21,21 @@
 #' @export
 #'
 run_analogue_simulation <- function(
-    data,
-    outcome_col,
-    h_vals,
-    start_idx,
-    k_vals_dist,
-    k_val_seas
-){
-
+  data,
+  outcome_col,
+  h_vals,
+  start_idx,
+  k_vals_dist,
+  k_val_seas
+) {
   ## TODO: add check that things are sorted on date
   ## TODO: add other checks?
+  require(genlasso)
 
   maxh <- max(h_vals)
 
   dist_data <- expand.grid(
-    pred_date_idx = start_idx:(nrow(data)-maxh),
+    pred_date_idx = start_idx:(nrow(data) - maxh),
     h = h_vals,
     k = k_vals_dist,
     method = c("distance"),
@@ -47,7 +46,7 @@ run_analogue_simulation <- function(
     )
 
   seas_data <- expand.grid(
-    pred_date_idx = start_idx:(nrow(data)-maxh),
+    pred_date_idx = start_idx:(nrow(data) - maxh),
     h = h_vals,
     k = k_val_seas,
     method = c("seasonal"),
@@ -62,79 +61,111 @@ run_analogue_simulation <- function(
     seas_data
   )
 
-
   # Set up parallel backend
-  num_cores <- detectCores() - 1  # Use all but one core
+  num_cores <- detectCores() - 1 # Use all but one core
   cl <- makeCluster(num_cores)
   registerDoParallel(cl)
 
+  # run simulations in parallel, one iteration is one analogues calculation
   # Parallel loop using foreach
+  message("running analogue simulation...")
   i <- NULL ## needed to define the global variable to avoid check warnings
-  preds <- foreach(i = 1:nrow(analogue_sim_data), .combine = 'c') %dopar% {
-    idx <- analogue_sim_data$pred_date_idx[i]
-    if (is.na(idx) || idx <= 1) return(NA)  # safety check
+  preds <- foreach(i = 1:nrow(analogue_sim_data), .combine = 'c') %dopar%
+    {
+      idx <- analogue_sim_data$pred_date_idx[i]
+      if (is.na(idx) || idx <= 1) {
+        return(NA)
+      } # safety check
 
-    result <- predictability::return_analogue_preds(
-      y = data[[outcome_col]][1:idx],
-      h = analogue_sim_data$h[i],
-      k = analogue_sim_data$k[i],
-      method = analogue_sim_data$method[i],
-      p = 4,
-      rho = pi / 52,
-      eta = 1 / 10
-    )
-    result$pred
-  }
+      result <- predictability::return_analogue_preds(
+        y = data[[outcome_col]][1:idx],
+        h = analogue_sim_data$h[i],
+        k = analogue_sim_data$k[i],
+        method = analogue_sim_data$method[i],
+        p = 4,
+        rho = pi / 52,
+        eta = 1 / 10
+      )
+      result$pred
+    }
 
   # Stop the cluster after work is done
   stopCluster(cl)
 
   # Assign predictions back to analogue_sim_data
   analogue_sim_data$pred <- preds
-  analogue_sim_data$target_date_idx <- analogue_sim_data$pred_date_idx + analogue_sim_data$h
+  analogue_sim_data$target_date_idx <- analogue_sim_data$pred_date_idx +
+    analogue_sim_data$h
 
-  analogue_sim_data$target <- data[[outcome_col]][analogue_sim_data$target_date_idx]
-  analogue_sim_data$sq_error <- (analogue_sim_data$pred - analogue_sim_data$target)^2
-  analogue_sim_data$pred_date_season <- data$season[analogue_sim_data$pred_date_idx]
-  analogue_sim_data$target_date_season <- data$season[analogue_sim_data$target_date_idx]
+  analogue_sim_data$target <- data[[outcome_col]][
+    analogue_sim_data$target_date_idx
+  ]
+  analogue_sim_data$sq_error <- (analogue_sim_data$pred -
+    analogue_sim_data$target)^2
+  analogue_sim_data$pred_date_season <- data$season[
+    analogue_sim_data$pred_date_idx
+  ]
+  analogue_sim_data$target_date_season <- data$season[
+    analogue_sim_data$target_date_idx
+  ]
 
   analogue_data_summary <- analogue_sim_data |>
     group_by(.data$pred_date_season, .data$method, .data$k, .data$h) |>
-    summarise(mse = mean(.data$sq_error, na.rm = TRUE),
-              sstot = mean((.data$target - mean(.data$target))^2)
+    summarise(
+      mse = mean(.data$sq_error, na.rm = TRUE),
+      sstot = mean((.data$target - mean(.data$target))^2)
     ) |>
     group_by(.data$pred_date_season, .data$k, .data$h) |>
-    ## scale mse by mse value
+    ## scale mse by sstot value
     mutate(
-      rsq = 1 - .data$mse/.data$sstot
+      rsq = 1 - .data$mse / .data$sstot
     )
 
   ## clumsily join k=30 seasonal with each separate distance
   analogue_data_summary_dist <- analogue_data_summary |>
     filter(.data$method == "distance") |>
     select(.data$pred_date_season, .data$k, .data$h, .data$rsq) |>
-    rename(rsq_dist = .data$rsq,
-           k_dist = .data$k)
+    rename(rsq_dist = .data$rsq, k_dist = .data$k)
 
   analogue_data_summary_seas <- analogue_data_summary |>
     filter(.data$method == "seasonal") |>
     select(.data$pred_date_season, .data$k, .data$h, .data$rsq) |>
-    rename(rsq_seas = .data$rsq,
-           k_seas = .data$k)
+    rename(rsq_seas = .data$rsq, k_seas = .data$k)
+
+  # compute seasonal hindcast rsq data to represent upper bound for each season
+  message("computing season-specific hindcasts using cross-validated trend filtering...")
+  tf <- genlasso::trendfilter(y = data[[outcome_col]], ord = 2)
+  cv_tf <- genlasso::cv.trendfilter(tf, k = 10)
+
+  tf_data_summary <- data |>
+    mutate(
+      tf2_fit = predict(tf, lambda=cv_tf$lambda.1se)$fit,
+      tf2_resid = .data[[outcome_col]] - .data$tf2_fit
+    ) |>
+    group_by(season) |>
+    summarise(
+      mse = mean(tf2_resid^2, na.rm = TRUE),
+      sstot = mean((.data[[outcome_col]] - mean(.data[[outcome_col]]))^2),
+      rsq_hindcast = 1 - mse / sstot
+    )
 
   rsq_data <- left_join(
     analogue_data_summary_dist,
     analogue_data_summary_seas,
     by = c("pred_date_season", "h")
-    )
+  ) |>
+    left_join(
+      select(tf_data_summary, season, rsq_hindcast),
+      by = c("pred_date_season" = "season")
+      )
 
   return(list(
     analogue_sim_data = analogue_sim_data,
     analogue_data_summary = analogue_data_summary,
-    rsq_data = rsq_data
+    rsq_data = rsq_data,
+    cv_tf = cv_tf
   ))
 }
-
 
 
 #' Make an R-squared plot
@@ -147,18 +178,22 @@ run_analogue_simulation <- function(
 #' @import ggplot2
 #'
 plot_analogue_sim <- function(
-    analogue_sim_data,
-    k_val_dist,
-    squish = FALSE
+  analogue_sim_data,
+  k_val_dist,
+  squish = FALSE
 ) {
   p <- analogue_sim_data[["rsq_data"]] |>
-    dplyr::filter(.data$k_dist==k_val_dist) |>
+    dplyr::filter(.data$k_dist == k_val_dist) |>
     ggplot() +
-    geom_point(aes(x=.data$rsq_seas, y=.data$rsq_dist, color=.data$pred_date_season)) +
-    geom_abline(slope=1, intercept=0) +
-    facet_wrap(.~h)
+    geom_point(aes(
+      x = .data$rsq_seas,
+      y = .data$rsq_dist,
+      color = .data$pred_date_season
+    )) +
+    geom_abline(slope = 1, intercept = 0) +
+    facet_wrap(. ~ h)
 
-  if(squish){
+  if (squish) {
     ## limit plot to (0,1) on both axes and squish oob points
     p <- p +
       scale_x_continuous(limits = c(0, 1), oob = scales::squish) +

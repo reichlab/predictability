@@ -4,3 +4,5 @@ predictability.Rproj
 inst/predictability-vignette.html
 ^.*\.Rproj$
 ^\.Rproj\.user$
+^\.vscode$
+^[.]?air[.]toml$
