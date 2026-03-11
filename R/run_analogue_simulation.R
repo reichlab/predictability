@@ -25,7 +25,9 @@
 #' @param hindcast_fn function that takes a numeric vector and returns fitted values
 #' @param transform_fn function applied to outcome column before computation
 #'
-#' @returns named list
+#' @returns A long-format data.frame with columns: `model`, `observed`,
+#'   `predicted`, `horizon`, `forecast_date`, `target_end_date`, `season`,
+#'   `season_week`, `k`. Compatible with `scoringutils::as_forecast_point()`.
 #' @import dplyr foreach doParallel parallel
 #' @export
 #'
@@ -46,8 +48,10 @@ run_analogue_simulation <- function(
   hindcast_fn    = hindcast_trendfilter,
   transform_fn   = identity
 ) {
-  ## TODO: add check that things are sorted on date
-  ## TODO: add other checks?
+  ## Verify data is sorted by date (row-position indexing assumes this)
+  if (is.unsorted(data$date)) {
+    stop("data must be sorted by date in ascending order")
+  }
 
   ## Apply transform to outcome column
   data[[outcome_col]] <- transform_fn(data[[outcome_col]])
@@ -137,77 +141,45 @@ run_analogue_simulation <- function(
   # Stop the cluster after work is done
   stopCluster(cl)
 
-  # Assign predictions back to analogue_sim_data
+  # Build analogue results into long-format data.frame
   analogue_sim_data$pred <- preds
   analogue_sim_data$target_date_idx <- analogue_sim_data$pred_date_idx +
     analogue_sim_data$h
 
-  analogue_sim_data$target <- data[[outcome_col]][
-    analogue_sim_data$target_date_idx
-  ]
-  analogue_sim_data$sq_error <- (analogue_sim_data$pred -
-    analogue_sim_data$target)^2
-  analogue_sim_data$pred_date_season <- data$season[
-    analogue_sim_data$pred_date_idx
-  ]
-  analogue_sim_data$target_date_season <- data$season[
-    analogue_sim_data$target_date_idx
-  ]
+  model_labels <- c(distance = "moa_distance", seasonal = "moa_seasonal",
+                    marginal = "marginal")
 
-  analogue_data_summary <- analogue_sim_data |>
-    group_by(.data$pred_date_season, .data$method, .data$k, .data$h) |>
-    summarise(
-      mse = mean(.data$sq_error, na.rm = TRUE),
-      sstot = mean((.data$target - mean(.data$target))^2)
-    ) |>
-    group_by(.data$pred_date_season, .data$k, .data$h) |>
-    ## scale mse by sstot value
-    mutate(
-      rsq = 1 - .data$mse / .data$sstot
-    )
+  analogue_results <- data.frame(
+    model = model_labels[analogue_sim_data$method],
+    observed = data[[outcome_col]][analogue_sim_data$target_date_idx],
+    predicted = analogue_sim_data$pred,
+    horizon = analogue_sim_data$h,
+    forecast_date = data$date[analogue_sim_data$pred_date_idx],
+    target_end_date = data$date[analogue_sim_data$target_date_idx],
+    season = data$season[analogue_sim_data$pred_date_idx],
+    season_week = data$season_week[analogue_sim_data$pred_date_idx],
+    k = analogue_sim_data$k,
+    stringsAsFactors = FALSE
+  )
 
-  ## clumsily join k=30 seasonal with each separate distance
-  analogue_data_summary_dist <- analogue_data_summary |>
-    filter(.data$method == "distance") |>
-    select(.data$pred_date_season, .data$k, .data$h, .data$rsq) |>
-    rename(rsq_dist = .data$rsq, k_dist = .data$k)
-
-  analogue_data_summary_seas <- analogue_data_summary |>
-    filter(.data$method == "seasonal") |>
-    select(.data$pred_date_season, .data$k, .data$h, .data$rsq) |>
-    rename(rsq_seas = .data$rsq, k_seas = .data$k)
-
-  # compute hindcast using the provided hindcast function
+  # Compute hindcast using the provided hindcast function
   message("computing hindcasts...")
   hindcast_fitted <- hindcast_fn(data[[outcome_col]])
 
-  tf_data_summary <- data |>
-    mutate(
-      hindcast_fit = hindcast_fitted,
-      hindcast_resid = .data[[outcome_col]] - .data$hindcast_fit
-    ) |>
-    group_by(season) |>
-    summarise(
-      mse = mean(hindcast_resid^2, na.rm = TRUE),
-      sstot = mean((.data[[outcome_col]] - mean(.data[[outcome_col]]))^2),
-      rsq_hindcast = 1 - mse / sstot
-    )
+  hindcast_results <- data.frame(
+    model = "hindcast",
+    observed = data[[outcome_col]],
+    predicted = hindcast_fitted,
+    horizon = 0L,
+    forecast_date = data$date,
+    target_end_date = data$date,
+    season = data$season,
+    season_week = data$season_week,
+    k = NA_integer_,
+    stringsAsFactors = FALSE
+  )
 
-  rsq_data <- left_join(
-    analogue_data_summary_dist,
-    analogue_data_summary_seas,
-    by = c("pred_date_season", "h")
-  ) |>
-    left_join(
-      select(tf_data_summary, season, rsq_hindcast),
-      by = c("pred_date_season" = "season")
-      )
-
-  return(list(
-    analogue_sim_data = analogue_sim_data,
-    analogue_data_summary = analogue_data_summary,
-    rsq_data = rsq_data
-  ))
+  rbind(analogue_results, hindcast_results)
 }
 
 
@@ -220,27 +192,11 @@ run_analogue_simulation <- function(
 #' @export
 #' @import ggplot2
 #'
+#' @note Deprecated. Use scoringutils for scoring and plotting instead.
 plot_analogue_sim <- function(
   analogue_sim_data,
   k_val_dist,
   squish = FALSE
 ) {
-  p <- analogue_sim_data[["rsq_data"]] |>
-    dplyr::filter(.data$k_dist == k_val_dist) |>
-    ggplot() +
-    geom_point(aes(
-      x = .data$rsq_seas,
-      y = .data$rsq_dist,
-      color = .data$pred_date_season
-    )) +
-    geom_abline(slope = 1, intercept = 0) +
-    facet_wrap(. ~ h)
-
-  if (squish) {
-    ## limit plot to (0,1) on both axes and squish oob points
-    p <- p +
-      scale_x_continuous(limits = c(0, 1), oob = scales::squish) +
-      scale_y_continuous(limits = c(0, 1), oob = scales::squish)
-  }
-  print(p)
+  .Deprecated(msg = "plot_analogue_sim is deprecated. Use scoringutils for scoring and plotting.")
 }

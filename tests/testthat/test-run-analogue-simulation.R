@@ -57,10 +57,10 @@ test_that("custom moa_fn is dispatched for distance method", {
       hindcast_fn = mock_hindcast_fn
     )
   )
-  dist_preds <- result$analogue_sim_data |>
-    dplyr::filter(method == "distance")
+  dist_preds <- result |>
+    dplyr::filter(model == "moa_distance")
   ## All distance predictions should be 999 from mock
-  expect_true(all(dist_preds$pred == 999))
+  expect_true(all(dist_preds$predicted == 999))
 })
 
 test_that("custom seas_fn is dispatched for seasonal method", {
@@ -77,9 +77,9 @@ test_that("custom seas_fn is dispatched for seasonal method", {
       hindcast_fn = mock_hindcast_fn
     )
   )
-  seas_preds <- result$analogue_sim_data |>
-    dplyr::filter(method == "seasonal")
-  expect_true(all(seas_preds$pred == 999))
+  seas_preds <- result |>
+    dplyr::filter(model == "moa_seasonal")
+  expect_true(all(seas_preds$predicted == 999))
 })
 
 test_that("custom hindcast_fn is called instead of hardcoded trendfilter", {
@@ -127,10 +127,14 @@ test_that("transform_fn is applied to outcome column before computation", {
       transform_fn = function(y) y * 2
     )
   )
-  ## Targets in the doubled run should be 2x the raw targets
-  raw_targets <- result_raw$analogue_sim_data$target
-  doubled_targets <- result_doubled$analogue_sim_data$target
-  expect_equal(doubled_targets, raw_targets * 2)
+  ## Observed values in the doubled run should be 2x the raw observed
+  raw_obs <- result_raw |>
+    dplyr::filter(model != "hindcast") |>
+    dplyr::pull(observed)
+  doubled_obs <- result_doubled |>
+    dplyr::filter(model != "hindcast") |>
+    dplyr::pull(observed)
+  expect_equal(doubled_obs, raw_obs * 2)
 })
 
 test_that("default args reproduce original behavior", {
