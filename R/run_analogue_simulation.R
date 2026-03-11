@@ -15,6 +15,15 @@
 #' neighbours to use in distance-based analogue simulation
 #' @param k_val_seas integer value for the number of nearest neighbours to use
 #' in seasonal analogue simulation
+#' @param moa_fn function for distance-based MOA predictions
+#' @param moa_params list of additional params passed to `moa_fn`
+#' @param seas_fn function for seasonal analogue predictions
+#' @param seas_params list of additional params passed to `seas_fn`
+#' @param marginal_fn function for marginal model predictions (NULL to skip)
+#' @param marginal_params list of additional params passed to `marginal_fn`
+#' @param k_val_marginal integer number of analogues for marginal model
+#' @param hindcast_fn function that takes a numeric vector and returns fitted values
+#' @param transform_fn function applied to outcome column before computation
 #'
 #' @returns named list
 #' @import dplyr foreach doParallel parallel
@@ -26,11 +35,22 @@ run_analogue_simulation <- function(
   h_vals,
   start_idx,
   k_vals_dist,
-  k_val_seas
+  k_val_seas,
+  moa_fn      = return_analogue_preds,
+  moa_params  = list(method = "distance", p = 4),
+  seas_fn     = return_analogue_preds,
+  seas_params = list(method = "seasonal", rho = pi / 52, eta = 1 / 10),
+  marginal_fn     = NULL,
+  marginal_params = list(method = "uniform"),
+  k_val_marginal  = NULL,
+  hindcast_fn    = hindcast_trendfilter,
+  transform_fn   = identity
 ) {
   ## TODO: add check that things are sorted on date
   ## TODO: add other checks?
-  require(genlasso)
+
+  ## Apply transform to outcome column
+  data[[outcome_col]] <- transform_fn(data[[outcome_col]])
 
   maxh <- max(h_vals)
 
@@ -61,10 +81,31 @@ run_analogue_simulation <- function(
     seas_data
   )
 
+  ## Add marginal model rows if marginal_fn is provided
+  if (!is.null(marginal_fn) && !is.null(k_val_marginal)) {
+    marginal_data <- expand.grid(
+      pred_date_idx = start_idx:(nrow(data) - maxh),
+      h = h_vals,
+      k = k_val_marginal,
+      method = c("marginal"),
+      stringsAsFactors = FALSE
+    ) |>
+      mutate(
+        pred = NA
+      )
+    analogue_sim_data <- bind_rows(analogue_sim_data, marginal_data)
+  }
+
   # Set up parallel backend
   num_cores <- detectCores() - 1 # Use all but one core
   cl <- makeCluster(num_cores)
   registerDoParallel(cl)
+
+  # Export custom functions to workers
+  fn_env <- environment()
+  clusterExport(cl, c("moa_fn", "moa_params", "seas_fn", "seas_params",
+                       "marginal_fn", "marginal_params"),
+                envir = fn_env)
 
   # run simulations in parallel, one iteration is one analogues calculation
   # Parallel loop using foreach
@@ -77,15 +118,19 @@ run_analogue_simulation <- function(
         return(NA)
       } # safety check
 
-      result <- predictability::return_analogue_preds(
-        y = data[[outcome_col]][1:idx],
-        h = analogue_sim_data$h[i],
-        k = analogue_sim_data$k[i],
-        method = analogue_sim_data$method[i],
-        p = 4,
-        rho = pi / 52,
-        eta = 1 / 10
-      )
+      y_sub <- data[[outcome_col]][1:idx]
+      h_i <- analogue_sim_data$h[i]
+      k_i <- analogue_sim_data$k[i]
+      method_i <- analogue_sim_data$method[i]
+
+      result <- if (method_i == "distance") {
+        do.call(moa_fn, c(list(y = y_sub, h = h_i, k = k_i), moa_params))
+      } else if (method_i == "seasonal") {
+        do.call(seas_fn, c(list(y = y_sub, h = h_i, k = k_i), seas_params))
+      } else if (method_i == "marginal") {
+        do.call(marginal_fn, c(list(y = y_sub, h = h_i, k = k_i), marginal_params))
+      }
+
       result$pred
     }
 
@@ -132,19 +177,18 @@ run_analogue_simulation <- function(
     select(.data$pred_date_season, .data$k, .data$h, .data$rsq) |>
     rename(rsq_seas = .data$rsq, k_seas = .data$k)
 
-  # compute seasonal hindcast rsq data to represent upper bound for each season
-  message("computing season-specific hindcasts using cross-validated trend filtering...")
-  tf <- genlasso::trendfilter(y = data[[outcome_col]], ord = 2)
-  cv_tf <- genlasso::cv.trendfilter(tf, k = 10)
+  # compute hindcast using the provided hindcast function
+  message("computing hindcasts...")
+  hindcast_fitted <- hindcast_fn(data[[outcome_col]])
 
   tf_data_summary <- data |>
     mutate(
-      tf2_fit = predict(tf, lambda=cv_tf$lambda.1se)$fit,
-      tf2_resid = .data[[outcome_col]] - .data$tf2_fit
+      hindcast_fit = hindcast_fitted,
+      hindcast_resid = .data[[outcome_col]] - .data$hindcast_fit
     ) |>
     group_by(season) |>
     summarise(
-      mse = mean(tf2_resid^2, na.rm = TRUE),
+      mse = mean(hindcast_resid^2, na.rm = TRUE),
       sstot = mean((.data[[outcome_col]] - mean(.data[[outcome_col]]))^2),
       rsq_hindcast = 1 - mse / sstot
     )
@@ -162,8 +206,7 @@ run_analogue_simulation <- function(
   return(list(
     analogue_sim_data = analogue_sim_data,
     analogue_data_summary = analogue_data_summary,
-    rsq_data = rsq_data,
-    cv_tf = cv_tf
+    rsq_data = rsq_data
   ))
 }
 
