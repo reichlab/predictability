@@ -6,3 +6,7 @@ inst/predictability-vignette.html
 ^\.Rproj\.user$
 ^\.vscode$
 ^[.]?air[.]toml$
+^\.claude$
+^CLAUDE\.md$
+^plan-modularity-refactor\.md$
+^predictions-by-location\.pdf$

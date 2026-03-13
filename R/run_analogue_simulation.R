@@ -91,7 +91,12 @@ run_analogue_simulation <- function(
   )
 
   # Set up parallel backend
-  num_cores <- detectCores() - 1
+  num_cores <- max(1, detectCores() - 1)
+  ## Respect CRAN/check limits on simultaneous processes
+  chk <- tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_", ""))
+  if (nzchar(chk) && chk %in% c("true", "warn")) {
+    num_cores <- min(num_cores, 2L)
+  }
   cl <- makeCluster(num_cores)
   registerDoParallel(cl)
 

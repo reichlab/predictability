@@ -8,6 +8,7 @@
 #' @param k_cv integer, number of cross-validation folds (default 10)
 #'
 #' @returns numeric vector of fitted values, same length as `y`
+#' @importFrom stats predict
 #' @export
 hindcast_trendfilter <- function(y, ord = 2, k_cv = 10) {
   tf <- genlasso::trendfilter(y = y, ord = ord)
