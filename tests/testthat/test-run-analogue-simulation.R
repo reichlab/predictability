@@ -1,10 +1,11 @@
-## Helper: create a small test dataset
-make_test_data <- function(n = 30) {
+## Helper: create test dataset with multiple seasons
+make_test_data <- function(n_seasons = 4, weeks_per_season = 15) {
+  n <- n_seasons * weeks_per_season
   data.frame(
-    date = seq(as.Date("2020-01-01"), by = "week", length.out = n),
-    value = sin(seq(0, 4 * pi, length.out = n)) + seq_len(n) * 0.1,
-    season = rep(c("2020", "2021"), each = n / 2),
-    season_week = rep(seq_len(n / 2), 2)
+    date = seq(as.Date("2019-01-01"), by = "week", length.out = n),
+    value = sin(seq(0, n_seasons * 2 * pi, length.out = n)) + seq_len(n) * 0.05,
+    season = rep(paste0("S", seq_len(n_seasons)), each = weeks_per_season),
+    season_week = rep(seq_len(weeks_per_season), n_seasons)
   )
 }
 
@@ -31,7 +32,7 @@ test_that("run_analogue_simulation accepts new function arguments", {
     suppressMessages(
       run_analogue_simulation(
         data = d, outcome_col = "value",
-        h_vals = 1, start_idx = 10,
+        h_vals = 1, start_idx = 50,
         k_vals_dist = 3, k_val_seas = 3,
         moa_fn = return_analogue_preds,
         moa_params = list(method = "distance", p = 4),
@@ -48,7 +49,7 @@ test_that("custom moa_fn is dispatched for distance method", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       moa_fn = mock_moa_fn,
       moa_params = list(),
@@ -68,7 +69,7 @@ test_that("custom seas_fn is dispatched for seasonal method", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       moa_fn = return_analogue_preds,
       moa_params = list(method = "distance", p = 4),
@@ -92,7 +93,7 @@ test_that("custom hindcast_fn is called instead of hardcoded trendfilter", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       hindcast_fn = tracking_hindcast
     )
@@ -108,7 +109,7 @@ test_that("transform_fn is applied to outcome column before computation", {
   result_raw <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       moa_fn = return_analogue_preds,
       moa_params = list(method = "distance", p = 4),
@@ -119,7 +120,7 @@ test_that("transform_fn is applied to outcome column before computation", {
   result_doubled <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       moa_fn = return_analogue_preds,
       moa_params = list(method = "distance", p = 4),
@@ -144,7 +145,7 @@ test_that("default args reproduce original behavior", {
     suppressMessages(
       run_analogue_simulation(
         data = d, outcome_col = "value",
-        h_vals = 1, start_idx = 10,
+        h_vals = 1, start_idx = 50,
         k_vals_dist = 3, k_val_seas = 3
       )
     )

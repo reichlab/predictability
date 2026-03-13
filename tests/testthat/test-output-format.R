@@ -1,10 +1,11 @@
-## Helper: create a small test dataset
-make_test_data <- function(n = 30) {
+## Helper: create test dataset with multiple seasons
+make_test_data <- function(n_seasons = 4, weeks_per_season = 15) {
+  n <- n_seasons * weeks_per_season
   data.frame(
-    date = seq(as.Date("2020-01-01"), by = "week", length.out = n),
-    value = sin(seq(0, 4 * pi, length.out = n)) + seq_len(n) * 0.1,
-    season = rep(c("2020", "2021"), each = n / 2),
-    season_week = rep(seq_len(n / 2), 2)
+    date = seq(as.Date("2019-01-01"), by = "week", length.out = n),
+    value = sin(seq(0, n_seasons * 2 * pi, length.out = n)) + seq_len(n) * 0.05,
+    season = rep(paste0("S", seq_len(n_seasons)), each = weeks_per_season),
+    season_week = rep(seq_len(weeks_per_season), n_seasons)
   )
 }
 
@@ -16,7 +17,7 @@ test_that("run_analogue_simulation returns a data.frame", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       hindcast_fn = mock_hindcast_fn
     )
@@ -29,7 +30,7 @@ test_that("output has expected columns", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       hindcast_fn = mock_hindcast_fn
     )
@@ -45,7 +46,7 @@ test_that("model values are from expected set", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       hindcast_fn = mock_hindcast_fn
     )
@@ -59,7 +60,7 @@ test_that("marginal model appears when marginal_fn is provided", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       marginal_fn = return_analogue_preds,
       marginal_params = list(method = "uniform"),
@@ -73,7 +74,7 @@ test_that("marginal model appears when marginal_fn is provided", {
 test_that("row count matches expected for analogue models", {
   d <- make_test_data()
   h_vals <- c(1, 2)
-  start_idx <- 25
+  start_idx <- 50
   k_vals_dist <- c(3, 5)
   k_val_seas <- 3
   maxh <- max(h_vals)
@@ -92,8 +93,10 @@ test_that("row count matches expected for analogue models", {
   seas_rows <- sum(result$model == "moa_seasonal")
   hindcast_rows <- sum(result$model == "hindcast")
 
+  ## MOA distance: n_origins * h_vals * k_vals
   expect_equal(dist_rows, n_origins * length(h_vals) * length(k_vals_dist))
-  expect_equal(seas_rows, n_origins * length(h_vals) * 1) # single k_val_seas
+  ## Seasonal: one row per target_end_date in evaluated seasons (S4 = 15 weeks)
+  expect_equal(seas_rows, 15)
   expect_equal(hindcast_rows, nrow(d))
 })
 
@@ -102,7 +105,7 @@ test_that("no inline scoring columns in output", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       hindcast_fn = mock_hindcast_fn
     )
@@ -117,11 +120,11 @@ test_that("forecast_date and target_end_date are Date class", {
   result <- suppressMessages(
     run_analogue_simulation(
       data = d, outcome_col = "value",
-      h_vals = 1, start_idx = 25,
+      h_vals = 1, start_idx = 50,
       k_vals_dist = 3, k_val_seas = 3,
       hindcast_fn = mock_hindcast_fn
     )
   )
-  expect_s3_class(result$forecast_date, "Date")
-  expect_s3_class(result$target_end_date, "Date")
+  expect_true(inherits(result$forecast_date, "Date"))
+  expect_true(inherits(result$target_end_date, "Date"))
 })
