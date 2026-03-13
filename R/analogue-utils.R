@@ -1,3 +1,16 @@
+#' Seasonal similarity kernel
+#'
+#' Computes similarity between the h-step-ahead target timepoint and all
+#' previous timepoints using a Gaussian kernel on the seasonal cycle.
+#'
+#' @param y numeric vector of length t, the observed time series
+#' @param h integer, the prediction horizon
+#' @param rho numeric, frequency of the seasonal cycle (e.g., `pi / 52` for
+#'   weekly data with annual seasonality)
+#' @param eta numeric, width of the Gaussian kernel
+#' @param ... ignored
+#'
+#' @returns numeric vector of length `t - 1` with similarity values
 phi_seasonal <- function(y, h, rho, eta, ...) {
   t <- length(y)
 
@@ -9,6 +22,20 @@ phi_seasonal <- function(y, h, rho, eta, ...) {
 }
 
 
+#' Distance similarity kernel
+#'
+#' Computes similarity between the p-lag vector at the end of `y` and p-lag
+#' vectors at all earlier timepoints, using a Gaussian kernel on Euclidean
+#' distance.
+#'
+#' @param y numeric vector of length t, the observed time series
+#' @param p integer, number of lags to use in the distance computation
+#' @param sigma numeric, bandwidth of the Gaussian kernel (default 1)
+#' @param ... ignored
+#'
+#' @returns numeric vector of length `t - p` with similarity values.
+#'   Entry `i` gives the similarity between the lag vector ending at time
+#'   `p + i - 1` and the lag vector ending at time `t`.
 phi_distance <- function(y, p, sigma = 1, ...) {
   ## compute the euclidean distance between
   ## the p-lag vector for the last element of y and every other element of y
@@ -32,20 +59,13 @@ phi_distance <- function(y, p, sigma = 1, ...) {
   exp(-phis / (2 * sigma^2))
 }
 
-# phi_distance <- function(t, tprime, y, p) {
-#   if(p<1)
-#     stop("p must be 1 or greater")
-#   # if(length(y)<t | length(y)<tprime)
-#   #   stop("y must be a vector of length greater than t and tprime")
-#
-#   ## for each element of y, compute the euclidean distance between that element and a lagged tprime element
-#
-#   xt <- y[(t-p+1):t]
-#   xtprime <- y[(tprime-p+1):tprime]
-#
-#   sqrt(sum( (xt-xtprime)^2 ))
-# }
-
+#' Uniform similarity kernel
+#'
+#' Returns equal similarity for all previous timepoints.
+#'
+#' @param y numeric vector of length t, the observed time series
+#'
+#' @returns numeric vector of ones with length `t - 1`
 phi_uniform <- function(y) {
   rep(1, length(y) - 1)
 }
@@ -95,14 +115,24 @@ get_analogues <- function(phi, k, h) {
 
 #' Run method of analogues to obtain predictions
 #'
-#' @param y vector of length t, the observed time series
-#' @param h integer horizon for which the prediction is desired
-#' @param k integer number of analogues to use
-#' @param method which method to use to compute similarity, one of "uniform",
-#' "seasonal" or "distance"
-#' @param ... other parameters to pass to similarity functions
+#' Computes a point prediction by finding the k most similar historical
+#' timepoints (analogues) and taking their weighted average at horizon h.
 #'
-#' @returns named list
+#' @param y numeric vector of length t, the observed time series
+#' @param h integer, the prediction horizon (steps ahead)
+#' @param k integer, number of analogues to use
+#' @param method string, similarity kernel to use: `"distance"` (lag-vector
+#'   Euclidean distance), `"seasonal"` (periodic Gaussian kernel), or
+#'   `"uniform"` (equal weight on all past observations)
+#' @param ... additional parameters passed to the similarity function
+#'   (e.g., `p` for distance, `rho` and `eta` for seasonal)
+#'
+#' @returns A list with two elements:
+#'   \describe{
+#'     \item{pred}{numeric(1), the weighted-average point prediction}
+#'     \item{analogue_indices}{data.frame with columns `topk_indices`,
+#'       `topk_values`, `topk_weights` identifying the selected analogues}
+#'   }
 #' @export
 return_analogue_preds <- function(y, h, k, method, ...) {
   args <- list(...)

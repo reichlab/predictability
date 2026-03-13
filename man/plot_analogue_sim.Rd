@@ -4,13 +4,18 @@
 \alias{plot_analogue_sim}
 \title{Make an R-squared plot}
 \usage{
-plot_analogue_sim(analogue_sim_data, k_val_dist)
+plot_analogue_sim(analogue_sim_data, k_val_dist, squish = FALSE)
 }
 \arguments{
 \item{analogue_sim_data}{output from run_analogue_sim}
 
 \item{k_val_dist}{k_val to plot}
+
+\item{squish}{logical, whether to squish OOB points or not in the plot}
 }
 \description{
 Make an R-squared plot
+}
+\note{
+Deprecated. Use scoringutils for scoring and plotting instead.
 }

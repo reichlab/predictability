@@ -1,33 +1,55 @@
 #' Run simulation using method of analogues to determine predictability
 #'
-#' @param data data.frame with the data. This function assumes that this object
-#' represents a set of time-series observations for a single unit/location. The
-#' data must have:
-#'   - a column named `outcome_col` with the outcome in it
-#'   - a column named `date` with a YYYY-MM-DD value that can be interpreted as the date of the observation
-#'   - a column named `season_week` with the week of the season that the observation was made in
-#'   - a column named `season` with a label for the season that the observation was made in
-#' @param outcome_col string with the column name that contains the outcome variable
-#' @param h_vals vector of integer values for horizons
-#' @param start_idx integer value for the first row in the dataset to compute
-#' predictions for
-#' @param k_vals_dist vector of integer values for the number of nearest
-#' neighbours to use in distance-based analogue simulation
-#' @param k_val_seas integer value for the number of nearest neighbours to use
-#' in seasonal analogue simulation
-#' @param moa_fn function for distance-based MOA predictions
-#' @param moa_params list of additional params passed to `moa_fn`
-#' @param seas_fn function for seasonal analogue predictions
-#' @param seas_params list of additional params passed to `seas_fn`
-#' @param marginal_fn function for marginal model predictions (NULL to skip)
-#' @param marginal_params list of additional params passed to `marginal_fn`
-#' @param k_val_marginal integer number of analogues for marginal model
-#' @param hindcast_fn function that takes a numeric vector and returns fitted values
-#' @param transform_fn function applied to outcome column before computation
+#' Runs three types of models on a single-location time series:
+#' \describe{
+#'   \item{MOA distance}{Origin-dependent. Predictions change with each
+#'     forecast origin. Run in parallel across `(origin, h, k)` combinations.}
+#'   \item{Seasonal / Marginal}{Pre-season baselines. Computed once per season
+#'     using only data available before that season starts. `forecast_date` is
+#'     the first date of the season; `horizon` is `NA`.}
+#'   \item{Hindcast}{Retrospective fit to the entire series. Computed once.
+#'     Both `forecast_date` and `horizon` are `NA`.}
+#' }
+#'
+#' @param data data.frame for a single location. Must contain columns:
+#'   \describe{
+#'     \item{`<outcome_col>`}{numeric outcome values}
+#'     \item{`date`}{Date, sorted ascending}
+#'     \item{`season`}{character/factor season label}
+#'     \item{`season_week`}{integer week within season}
+#'   }
+#' @param outcome_col string, column name containing the outcome variable
+#' @param h_vals integer vector of prediction horizons (for MOA distance)
+#' @param start_idx integer, first row index for the evaluation window
+#' @param k_vals_dist integer vector, number of analogues for MOA distance
+#'   (each value produces a separate set of predictions)
+#' @param k_val_seas integer, number of analogues for seasonal baseline
+#' @param moa_fn function with signature `f(y, h, k, ...) -> list(pred, analogue_indices)`.
+#'   Called in the parallel loop for each `(origin, h, k)` combination.
+#' @param moa_params list of additional arguments passed to `moa_fn`
+#' @param seas_fn function with the same signature as `moa_fn`. Called once per
+#'   target week per season using pre-season data.
+#' @param seas_params list of additional arguments passed to `seas_fn`
+#' @param marginal_fn function with the same signature as `moa_fn`, or `NULL`
+#'   to skip. Called once per target week per season using pre-season data.
+#' @param marginal_params list of additional arguments passed to `marginal_fn`
+#' @param k_val_marginal integer, number of analogues for marginal model
+#'   (required if `marginal_fn` is not `NULL`)
+#' @param hindcast_fn function with signature `f(y) -> numeric vector` of
+#'   fitted values (same length as `y`). Called once on the full series.
+#' @param transform_fn function applied to the outcome column before all
+#'   computation (default `identity`)
 #'
 #' @returns A long-format data.frame with columns: `model`, `observed`,
 #'   `predicted`, `horizon`, `forecast_date`, `target_end_date`, `season`,
-#'   `season_week`, `k`. Compatible with `scoringutils::as_forecast_point()`.
+#'   `season_week`, `k`. Row types:
+#'   \describe{
+#'     \item{`moa_distance`}{`forecast_date` and `horizon` populated}
+#'     \item{`moa_seasonal`, `marginal`}{`forecast_date` = season start,
+#'       `horizon = NA`}
+#'     \item{`hindcast`}{`forecast_date = NA`, `horizon = NA`, `k = NA`}
+#'   }
+#'   Compatible with [scoringutils::as_forecast_point()].
 #' @import dplyr foreach doParallel parallel
 #' @export
 #'

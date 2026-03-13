@@ -10,36 +10,83 @@ run_analogue_simulation(
   h_vals,
   start_idx,
   k_vals_dist,
-  k_val_seas
+  k_val_seas,
+  moa_fn = return_analogue_preds,
+  moa_params = list(method = "distance", p = 4),
+  seas_fn = return_analogue_preds,
+  seas_params = list(method = "seasonal", rho = pi/52, eta = 1/10),
+  marginal_fn = NULL,
+  marginal_params = list(method = "uniform"),
+  k_val_marginal = NULL,
+  hindcast_fn = hindcast_trendfilter,
+  transform_fn = identity
 )
 }
 \arguments{
-\item{data}{data.frame with the data. This function assumes that this object
-represents a set of time-series observations for a single unit/location. The
-data must have:
-\itemize{
-\item a column named \code{outcome_col} with the outcome in it
-\item a column named \code{date} with a YYYY-MM-DD value that can be interpreted as the date of the observation
-\item a column named \code{season_week} with the week of the season that the observation was made in
-\item a column named \code{season} with a label for the season that the observation was made in
+\item{data}{data.frame for a single location. Must contain columns:
+\describe{
+\item{\verb{<outcome_col>}}{numeric outcome values}
+\item{\code{date}}{Date, sorted ascending}
+\item{\code{season}}{character/factor season label}
+\item{\code{season_week}}{integer week within season}
 }}
 
-\item{outcome_col}{string with the column name that contains the outcome variable}
+\item{outcome_col}{string, column name containing the outcome variable}
 
-\item{h_vals}{vector of integer values for horizons}
+\item{h_vals}{integer vector of prediction horizons (for MOA distance)}
 
-\item{start_idx}{integer value for the first row in the dataset to compute
-predictions for}
+\item{start_idx}{integer, first row index for the evaluation window}
 
-\item{k_vals_dist}{vector of integer values for the number of nearest
-neighbours to use in distance-based analogue simulation}
+\item{k_vals_dist}{integer vector, number of analogues for MOA distance
+(each value produces a separate set of predictions)}
 
-\item{k_val_seas}{integer value for the number of nearest neighbours to use
-in seasonal analogue simulation}
+\item{k_val_seas}{integer, number of analogues for seasonal baseline}
+
+\item{moa_fn}{function with signature \code{f(y, h, k, ...) -> list(pred, analogue_indices)}.
+Called in the parallel loop for each \verb{(origin, h, k)} combination.}
+
+\item{moa_params}{list of additional arguments passed to \code{moa_fn}}
+
+\item{seas_fn}{function with the same signature as \code{moa_fn}. Called once per
+target week per season using pre-season data.}
+
+\item{seas_params}{list of additional arguments passed to \code{seas_fn}}
+
+\item{marginal_fn}{function with the same signature as \code{moa_fn}, or \code{NULL}
+to skip. Called once per target week per season using pre-season data.}
+
+\item{marginal_params}{list of additional arguments passed to \code{marginal_fn}}
+
+\item{k_val_marginal}{integer, number of analogues for marginal model
+(required if \code{marginal_fn} is not \code{NULL})}
+
+\item{hindcast_fn}{function with signature \verb{f(y) -> numeric vector} of
+fitted values (same length as \code{y}). Called once on the full series.}
+
+\item{transform_fn}{function applied to the outcome column before all
+computation (default \code{identity})}
 }
 \value{
-named list
+A long-format data.frame with columns: \code{model}, \code{observed},
+\code{predicted}, \code{horizon}, \code{forecast_date}, \code{target_end_date}, \code{season},
+\code{season_week}, \code{k}. Row types:
+\describe{
+\item{\code{moa_distance}}{\code{forecast_date} and \code{horizon} populated}
+\item{\code{moa_seasonal}, \code{marginal}}{\code{forecast_date} = season start,
+\code{horizon = NA}}
+\item{\code{hindcast}}{\code{forecast_date = NA}, \code{horizon = NA}, \code{k = NA}}
+}
+Compatible with \code{\link[scoringutils:as_forecast_point]{scoringutils::as_forecast_point()}}.
 }
 \description{
-Run simulation using method of analogues to determine predictability
+Runs three types of models on a single-location time series:
+\describe{
+\item{MOA distance}{Origin-dependent. Predictions change with each
+forecast origin. Run in parallel across \verb{(origin, h, k)} combinations.}
+\item{Seasonal / Marginal}{Pre-season baselines. Computed once per season
+using only data available before that season starts. \code{forecast_date} is
+the first date of the season; \code{horizon} is \code{NA}.}
+\item{Hindcast}{Retrospective fit to the entire series. Computed once.
+Both \code{forecast_date} and \code{horizon} are \code{NA}.}
+}
 }

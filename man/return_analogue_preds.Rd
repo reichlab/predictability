@@ -7,20 +7,28 @@
 return_analogue_preds(y, h, k, method, ...)
 }
 \arguments{
-\item{y}{vector of length t, the observed time series}
+\item{y}{numeric vector of length t, the observed time series}
 
-\item{h}{integer horizon for which the prediction is desired}
+\item{h}{integer, the prediction horizon (steps ahead)}
 
-\item{k}{integer number of analogues to use}
+\item{k}{integer, number of analogues to use}
 
-\item{method}{which method to use to compute simlarity, one of "uniform",
-"seasonal" or "distance"}
+\item{method}{string, similarity kernel to use: \code{"distance"} (lag-vector
+Euclidean distance), \code{"seasonal"} (periodic Gaussian kernel), or
+\code{"uniform"} (equal weight on all past observations)}
 
-\item{...}{other parameters to pass to similarity functions}
+\item{...}{additional parameters passed to the similarity function
+(e.g., \code{p} for distance, \code{rho} and \code{eta} for seasonal)}
 }
 \value{
-named list
+A list with two elements:
+\describe{
+\item{pred}{numeric(1), the weighted-average point prediction}
+\item{analogue_indices}{data.frame with columns \code{topk_indices},
+\code{topk_values}, \code{topk_weights} identifying the selected analogues}
+}
 }
 \description{
-Run method of analogues to obtain predictions
+Computes a point prediction by finding the k most similar historical
+timepoints (analogues) and taking their weighted average at horizon h.
 }
