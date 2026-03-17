@@ -76,17 +76,23 @@ phi_uniform <- function(y) {
 #' @param phi vector of similarities. Similarities are presumed to be
 #' calculated between observations at timepoint t and i where i is the index
 #' of the vector phi.
-#' @param k the number of analogues to return.
+#' @param k the number of analogues to return. If `NULL`, all available
+#'   observations are used (useful for marginal/uniform models).
 #' @param h the horizon to predict for
 #'
 #' @returns a data.frame with three columns.
 #'   - topk_indices: the indices of the original phi vector returned
 #'   - topk_values: the values of the original phi vector
 #'   - topk_weights: the scaled weights (sum to 1) of the phi vector
-get_analogues <- function(phi, k, h) {
+get_analogues <- function(phi, k = NULL, h) {
   ## remove last h-1 indices from phi vector
   ## those entries will not be able to be used for h-step ahead predictions
   phi <- phi[1:(length(phi) - h + 1)] ## (length(phi)-h+1) = t-1-h+1 = t-h
+
+  ## If k is NULL, use all available observations
+  if (is.null(k)) {
+    k <- length(phi)
+  }
 
   if (length(phi) < k) {
     stop(paste(
@@ -102,7 +108,7 @@ get_analogues <- function(phi, k, h) {
   if (all(topk_values == 0)) {
     warning("all selected similarity values are zero.")
   }
-  if (all(topk_values == 1)) {
+  if (all(topk_values == 1) && k > 1) {
     warning("all selected similarity values are one.")
   }
   data.frame(

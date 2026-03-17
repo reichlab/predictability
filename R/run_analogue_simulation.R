@@ -163,6 +163,12 @@ run_analogue_simulation <- function(
         list(y = y_pre, h = h_for_target, k = k_val_seas),
         seas_params
       ))
+      ## k used by seasonal: actual count from analogues, or k_val_seas
+      seas_k_used <- if (is.null(k_val_seas)) {
+        nrow(seas_result$analogue_indices)
+      } else {
+        k_val_seas
+      }
       baseline_rows[[length(baseline_rows) + 1]] <- data.frame(
         model = "moa_seasonal",
         observed = y[target_idx],
@@ -172,16 +178,21 @@ run_analogue_simulation <- function(
         target_end_date = data$date[target_idx],
         season = data$season[target_idx],
         season_week = data$season_week[target_idx],
-        k = k_val_seas,
+        k = seas_k_used,
         stringsAsFactors = FALSE
       )
 
       ## Marginal baseline (if provided)
-      if (!is.null(marginal_fn) && !is.null(k_val_marginal)) {
+      if (!is.null(marginal_fn)) {
         marg_result <- do.call(marginal_fn, c(
           list(y = y_pre, h = h_for_target, k = k_val_marginal),
           marginal_params
         ))
+        marg_k_used <- if (is.null(k_val_marginal)) {
+          nrow(marg_result$analogue_indices)
+        } else {
+          k_val_marginal
+        }
         baseline_rows[[length(baseline_rows) + 1]] <- data.frame(
           model = "marginal",
           observed = y[target_idx],
@@ -191,7 +202,7 @@ run_analogue_simulation <- function(
           target_end_date = data$date[target_idx],
           season = data$season[target_idx],
           season_week = data$season_week[target_idx],
-          k = k_val_marginal,
+          k = marg_k_used,
           stringsAsFactors = FALSE
         )
       }

@@ -54,3 +54,28 @@ test_that("get_analogues accuracy: hand-computed values", {
   expect_equal(result$topk_values, c(0.9, 0.5))
   expect_equal(result$topk_weights, c(0.9 / 1.4, 0.5 / 1.4))
 })
+
+test_that("get_analogues with k = NULL uses all available entries", {
+  phi <- c(0.1, 0.5, 0.3, 0.9)
+  result <- get_analogues(phi, k = NULL, h = 1)
+  ## h = 1 → no trimming, all 4 entries used
+  expect_equal(nrow(result), 4)
+  expect_equal(sum(result$topk_weights), 1)
+  ## All indices present
+  expect_equal(sort(result$topk_indices), 1:4)
+})
+
+test_that("get_analogues with k = NULL and h > 1 trims correctly", {
+  phi <- c(0.1, 0.5, 0.3, 0.9)
+  result <- get_analogues(phi, k = NULL, h = 2)
+  ## h = 2 → trim to phi[1:3], use all 3
+  expect_equal(nrow(result), 3)
+  expect_equal(sort(result$topk_indices), 1:3)
+})
+
+test_that("get_analogues with k = NULL and uniform weights gives equal weights", {
+  phi <- rep(1, 10)
+  result <- get_analogues(phi, k = NULL, h = 1)
+  expect_equal(nrow(result), 10)
+  expect_equal(result$topk_weights, rep(0.1, 10))
+})

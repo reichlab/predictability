@@ -4,14 +4,15 @@
 \alias{get_analogues}
 \title{Find indices of analogues}
 \usage{
-get_analogues(phi, k, h)
+get_analogues(phi, k = NULL, h)
 }
 \arguments{
 \item{phi}{vector of similarities. Similarities are presumed to be
 calculated between observations at timepoint t and i where i is the index
 of the vector phi.}
 
-\item{k}{the number of analogues to return.}
+\item{k}{the number of analogues to return. If \code{NULL}, all available
+observations are used (useful for marginal/uniform models).}
 
 \item{h}{the horizon to predict for}
 }
