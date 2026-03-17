@@ -136,6 +136,8 @@ run_analogue_simulation <- function(
 
   ## ---- Part B: Pre-season baselines (seasonal, marginal) ----
   ## Computed once per season using only data before the season starts.
+  ## Seasonal: per-week climatology (analogues re-selected per target week).
+  ## Marginal: fit once at season start, same analogues for all target weeks.
 
   ## Identify seasons that overlap with the evaluation window
   eval_start_date <- data$date[start_idx]
@@ -153,17 +155,31 @@ run_analogue_simulation <- function(
     y_pre <- y[1:(season_start_idx - 1)]
     pre_season_end <- length(y_pre)
     season_start_date <- data$date[season_start_idx]
+    max_h <- max(seas_indices) - pre_season_end
+
+    ## Fit marginal baseline once per season (if provided)
+    if (!is.null(marginal_fn)) {
+      marg_result <- do.call(marginal_fn, c(
+        list(y = y_pre, h = max_h, k = k_val_marginal),
+        marginal_params
+      ))
+      marg_analogues <- marg_result$analogue_indices
+      marg_k_used <- if (is.null(k_val_marginal)) {
+        nrow(marg_analogues)
+      } else {
+        k_val_marginal
+      }
+    }
 
     ## For each target week in this season, compute baselines
     for (target_idx in seas_indices) {
       h_for_target <- target_idx - pre_season_end
 
-      ## Seasonal baseline
+      ## Seasonal baseline: re-fit per target week (per-week climatology)
       seas_result <- do.call(seas_fn, c(
         list(y = y_pre, h = h_for_target, k = k_val_seas),
         seas_params
       ))
-      ## k used by seasonal: actual count from analogues, or k_val_seas
       seas_k_used <- if (is.null(k_val_seas)) {
         nrow(seas_result$analogue_indices)
       } else {
@@ -182,21 +198,16 @@ run_analogue_simulation <- function(
         stringsAsFactors = FALSE
       )
 
-      ## Marginal baseline (if provided)
+      ## Marginal prediction from fixed analogues
       if (!is.null(marginal_fn)) {
-        marg_result <- do.call(marginal_fn, c(
-          list(y = y_pre, h = h_for_target, k = k_val_marginal),
-          marginal_params
-        ))
-        marg_k_used <- if (is.null(k_val_marginal)) {
-          nrow(marg_result$analogue_indices)
-        } else {
-          k_val_marginal
-        }
+        marg_pred <- sum(
+          y_pre[marg_analogues$topk_indices + h_for_target] *
+            marg_analogues$topk_weights
+        )
         baseline_rows[[length(baseline_rows) + 1]] <- data.frame(
           model = "marginal",
           observed = y[target_idx],
-          predicted = marg_result$pred,
+          predicted = marg_pred,
           horizon = NA_integer_,
           forecast_date = season_start_date,
           target_end_date = data$date[target_idx],
