@@ -20,3 +20,8 @@ numeric vector of fitted values, same length as \code{y}
 Fits a trend filter to the time series and returns fitted values at the
 regularization parameter selected by cross-validation (lambda.1se).
 }
+\details{
+The \code{maxsteps} parameter for the solution path scales with series length
+(\code{max(2000, 4 * length(y))}) to ensure the path reaches sufficient
+complexity for long seasonal time series.
+}
