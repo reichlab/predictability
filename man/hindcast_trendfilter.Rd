@@ -4,7 +4,12 @@
 \alias{hindcast_trendfilter}
 \title{Hindcast using cross-validated trend filtering}
 \usage{
-hindcast_trendfilter(y, ord = 2, k_cv = 10)
+hindcast_trendfilter(
+  y,
+  ord = 2,
+  k_cv = 10,
+  transform = scales::transform_identity()
+)
 }
 \arguments{
 \item{y}{numeric vector, the observed time series}
@@ -12,6 +17,9 @@ hindcast_trendfilter(y, ord = 2, k_cv = 10)
 \item{ord}{integer, order of the trend filter (default 2)}
 
 \item{k_cv}{integer, number of cross-validation folds (default 10)}
+
+\item{transform}{a scales transform object with \verb{$transform} and \verb{$inverse}
+methods (default \code{\link[scales:transform_identity]{scales::transform_identity()}})}
 }
 \value{
 numeric vector of fitted values, same length as \code{y}
@@ -24,4 +32,9 @@ regularization parameter selected by cross-validation (lambda.1se).
 The \code{maxsteps} parameter for the solution path scales with series length
 (\code{max(2000, 4 * length(y))}) to ensure the path reaches sufficient
 complexity for long seasonal time series.
+
+An optional \code{transform} argument accepts a scales transform object
+(e.g., \code{\link[scales:transform_sqrt]{scales::transform_sqrt()}}, \code{\link[scales:transform_boxcox]{scales::transform_boxcox()}}).
+The transform is applied before fitting and inverted before returning
+fitted values.
 }
