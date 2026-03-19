@@ -19,7 +19,8 @@ run_analogue_simulation(
   marginal_params = list(method = "uniform"),
   k_val_marginal = NULL,
   hindcast_fn = hindcast_trendfilter,
-  transform_fn = identity
+  transform_fn = identity,
+  parallel = TRUE
 )
 }
 \arguments{
@@ -65,6 +66,10 @@ fitted values (same length as \code{y}). Called once on the full series.}
 
 \item{transform_fn}{function applied to the outcome column before all
 computation (default \code{identity})}
+
+\item{parallel}{logical, whether to use parallel processing for the MOA
+distance loop (default \code{TRUE}). Set to \code{FALSE} when running inside
+containers (e.g., Apptainer/SLURM) where forking is unreliable.}
 }
 \value{
 A long-format data.frame with columns: \code{model}, \code{observed},

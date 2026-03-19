@@ -39,6 +39,9 @@
 #'   fitted values (same length as `y`). Called once on the full series.
 #' @param transform_fn function applied to the outcome column before all
 #'   computation (default `identity`)
+#' @param parallel logical, whether to use parallel processing for the MOA
+#'   distance loop (default `TRUE`). Set to `FALSE` when running inside
+#'   containers (e.g., Apptainer/SLURM) where forking is unreliable.
 #'
 #' @returns A long-format data.frame with columns: `model`, `observed`,
 #'   `predicted`, `horizon`, `forecast_date`, `target_end_date`, `season`,
@@ -68,7 +71,8 @@ run_analogue_simulation <- function(
   marginal_params = list(method = "uniform"),
   k_val_marginal  = NULL,
   hindcast_fn    = hindcast_trendfilter,
-  transform_fn   = identity
+  transform_fn   = identity,
+  parallel       = TRUE
 ) {
   ## Verify data is sorted by date (row-position indexing assumes this)
   if (is.unsorted(data$date)) {
@@ -91,17 +95,22 @@ run_analogue_simulation <- function(
   )
 
   # Set up parallel backend
-  num_cores <- max(1, detectCores() - 1)
-  ## Respect CRAN/check limits on simultaneous processes
-  chk <- tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_", ""))
-  if (nzchar(chk) && chk %in% c("true", "warn")) {
-    num_cores <- min(num_cores, 2L)
-  }
-  cl <- makeCluster(num_cores)
-  registerDoParallel(cl)
+  if (parallel) {
+    num_cores <- max(1, detectCores() - 1)
+    ## Respect CRAN/check limits on simultaneous processes
+    chk <- tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_", ""))
+    if (nzchar(chk) && chk %in% c("true", "warn")) {
+      num_cores <- min(num_cores, 2L)
+    }
+    cl <- makeCluster(num_cores)
+    registerDoParallel(cl)
+    on.exit(stopCluster(cl), add = TRUE)
 
-  fn_env <- environment()
-  clusterExport(cl, c("moa_fn", "moa_params"), envir = fn_env)
+    fn_env <- environment()
+    clusterExport(cl, c("moa_fn", "moa_params"), envir = fn_env)
+  } else {
+    registerDoSEQ()
+  }
 
   message("running MOA distance simulation...")
   i <- NULL
@@ -117,8 +126,6 @@ run_analogue_simulation <- function(
       ))
       result$pred
     }
-
-  stopCluster(cl)
 
   dist_data$target_date_idx <- dist_data$pred_date_idx + dist_data$h
 
