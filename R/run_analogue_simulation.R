@@ -105,7 +105,8 @@ run_analogue_simulation <- function(
 
   message("running MOA distance simulation...")
   i <- NULL
-  dist_preds <- foreach(i = seq_len(nrow(dist_data)), .combine = "c") %dopar%
+  dist_preds <- foreach(i = seq_len(nrow(dist_data)), .combine = "c",
+                        .packages = "predictability") %dopar%
     {
       idx <- dist_data$pred_date_idx[i]
       if (is.na(idx) || idx <= 1) return(NA)
