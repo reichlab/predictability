@@ -8,7 +8,8 @@ hindcast_trendfilter(
   y,
   ord = 2,
   k_cv = 10,
-  transform = scales::transform_identity()
+  transform = scales::transform_identity(),
+  lambda_factor = 1
 )
 }
 \arguments{
@@ -20,6 +21,10 @@ hindcast_trendfilter(
 
 \item{transform}{a scales transform object with \verb{$transform} and \verb{$inverse}
 methods (default \code{\link[scales:transform_identity]{scales::transform_identity()}})}
+
+\item{lambda_factor}{numeric multiplier applied to the CV-selected lambda.
+Values > 1 produce smoother fits; values < 1 produce rougher fits.
+Default 1 (use \code{lambda.1se} as-is).}
 }
 \value{
 numeric vector of fitted values, same length as \code{y}
