@@ -13,6 +13,7 @@ Imports:
     parallel,
     genlasso,
     ggplot2,
+    mgcv,
     scales,
     stats
 Encoding: UTF-8
